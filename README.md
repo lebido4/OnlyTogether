@@ -26,7 +26,7 @@ flowchart LR
 
 - `api-gateway`: единая REST-точка входа, CORS, JWT middleware для защищённых маршрутов, проксирование Socket.io на realtime-сервис.
 - `auth-service`: регистрация, логин, выдача JWT access token, `/me`, событие `auth:user_registered`.
-- `room-service`: комнаты, invite-коды, участники, лимит участников, owner/moderator права, каноническое состояние видео в `rooms.current_state`.
+- `room-service`: комнаты, invite-коды, участники, лимит участников, удаление комнат владельцем, каноническое состояние видео в `rooms.current_state`.
 - `chat-service`: история сообщений, отправка сообщений, системные сообщения по событиям входа/выхода.
 - `realtime-service`: Socket.io, presence в Redis, трансляция Redis-событий в комнаты, приём команд чата и плеера.
 - `postgres`: основная БД.
@@ -148,6 +148,20 @@ Response `201`:
 
 Ошибки: `400 VALIDATION_ERROR`, `400 INVALID_YOUTUBE_URL`, `400 UNSUPPORTED_VIDEO_URL`, `401 INVALID_TOKEN`.
 
+### `GET /rooms`
+
+Auth: `Bearer <jwt>`.
+
+Возвращает только комнаты, где текущий пользователь является владельцем. Комнаты, к которым пользователь присоединился по invite-ссылке как участник, не показываются в Dashboard.
+
+Response:
+
+```json
+{ "rooms": [{ "id": "uuid", "title": "Friday movie", "currentUserRole": "owner" }] }
+```
+
+Ошибки: `401 UNAUTHORIZED`, `401 INVALID_TOKEN`.
+
 ### `GET /rooms/:id`
 
 Auth: `Bearer <jwt>`, пользователь должен быть активным участником.
@@ -177,6 +191,16 @@ Response:
 ```
 
 Ошибки: `403 INVALID_INVITE`, `409 ROOM_IS_FULL`, `404 ROOM_NOT_FOUND`.
+
+### `DELETE /rooms/:id`
+
+Auth: `Bearer <jwt>`, удалить комнату может только владелец.
+
+Response: `204 No Content`.
+
+Побочный эффект: каскадно удаляются участники, сообщения и события комнаты; публикуется `room:deleted`.
+
+Ошибки: `403 FORBIDDEN_ROOM_DELETE`, `404 ROOM_NOT_FOUND`.
 
 ### `POST /rooms/:id/leave`
 
@@ -220,7 +244,7 @@ Response `201`:
 
 - `GET /rooms/invite/:inviteCode`
 - `POST /rooms/invite/:inviteCode/join`
-- `GET /rooms` для Dashboard.
+- `GET /rooms` для Dashboard со списком owned rooms.
 
 ## Real-Time События
 
@@ -251,6 +275,8 @@ Socket.io клиент подключается к `VITE_SOCKET_URL` с `auth: {
 ```json
 { "roomId": "uuid", "positionSec": 12.3 }
 ```
+
+Команды `sync:video_*` доступны любому активному участнику комнаты.
 
 `sync:video_pause`
 
@@ -312,12 +338,19 @@ Socket.io клиент подключается к `VITE_SOCKET_URL` с `auth: {
 { "roomId": "uuid", "user": { "id": "uuid", "username": "alice" } }
 ```
 
+`room:deleted`
+
+```json
+{ "roomId": "uuid", "title": "Friday movie", "deletedBy": { "id": "uuid", "username": "alice" } }
+```
+
 ### Межсервисные события Redis
 
 - `auth:user_registered`: `{ userId, email, username }`
 - `room:created`: `{ roomId, ownerId, title, youtubeVideoId, inviteCode }`
 - `room:user_joined`: `{ roomId, user: { id, username }, inviteCode }`
 - `room:user_left`: `{ roomId, user: { id, username } }`
+- `room:deleted`: `{ roomId, title, deletedBy: { id, username } }`
 - `chat:message_sent`: `{ roomId, message }`
 - `sync:video_play`: `{ roomId, action, state, updatedBy }`
 - `sync:video_pause`: `{ roomId, action, state, updatedBy }`

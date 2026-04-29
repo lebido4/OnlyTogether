@@ -199,7 +199,7 @@ io.on('connection', (socket) => {
 });
 
 await subscribeEvents(
-  ['chat:message_sent', 'sync:state_updated', 'room:user_joined', 'room:user_left'],
+  ['chat:message_sent', 'sync:state_updated', 'room:user_joined', 'room:user_left', 'room:deleted'],
   async (event) => {
     const roomId = event.payload?.roomId;
     if (!roomId) {

@@ -1,4 +1,4 @@
-import { Clipboard, LogOut, Pause, Play, RotateCcw, Square, StepBack, StepForward } from 'lucide-react';
+import { Clipboard, LogOut, Pause, Play, RotateCcw, Square, StepBack, StepForward, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { io } from 'socket.io-client';
@@ -23,7 +23,7 @@ function formatSeconds(value) {
 export default function RoomPage() {
   const { roomId } = useParams();
   const navigate = useNavigate();
-  const { token, user } = useAuth();
+  const { token } = useAuth();
   const playerRef = useRef(null);
   const socketRef = useRef(null);
   const suppressPlayerEventRef = useRef(false);
@@ -37,10 +37,7 @@ export default function RoomPage() {
   const [currentTime, setCurrentTime] = useState(0);
   const [socketConnected, setSocketConnected] = useState(false);
 
-  const canControl = useMemo(
-    () => ['owner', 'moderator'].includes(room?.currentUserRole),
-    [room?.currentUserRole]
-  );
+  const canControl = useMemo(() => Boolean(room?.currentUserRole), [room?.currentUserRole]);
 
   const applyPlayerState = useCallback((state) => {
     if (!playerRef.current) {
@@ -169,13 +166,23 @@ export default function RoomPage() {
 
     socket.on('room:user_joined', ({ roomId: eventRoomId }) => {
       if (eventRoomId === roomId) {
-        api.get(`/rooms/${roomId}`).then((response) => setRoom(response.data.room));
+        api.get(`/rooms/${roomId}`)
+          .then((response) => setRoom(response.data.room))
+          .catch((requestError) => setError(getApiError(requestError)));
       }
     });
 
     socket.on('room:user_left', ({ roomId: eventRoomId }) => {
       if (eventRoomId === roomId) {
-        api.get(`/rooms/${roomId}`).then((response) => setRoom(response.data.room));
+        api.get(`/rooms/${roomId}`)
+          .then((response) => setRoom(response.data.room))
+          .catch((requestError) => setError(getApiError(requestError)));
+      }
+    });
+
+    socket.on('room:deleted', ({ roomId: eventRoomId }) => {
+      if (eventRoomId === roomId) {
+        navigate('/dashboard', { replace: true });
       }
     });
 
@@ -227,6 +234,23 @@ export default function RoomPage() {
     }
   }
 
+  async function deleteRoom() {
+    if (!room || room.currentUserRole !== 'owner') {
+      return;
+    }
+
+    if (!window.confirm(`Удалить комнату "${room.title}"? Сообщения и участники тоже будут удалены.`)) {
+      return;
+    }
+
+    try {
+      await api.delete(`/rooms/${roomId}`);
+      navigate('/dashboard', { replace: true });
+    } catch (requestError) {
+      setError(getApiError(requestError));
+    }
+  }
+
   if (!room) {
     return <main className="screen-center">{error || 'Загрузка комнаты...'}</main>;
   }
@@ -245,6 +269,11 @@ export default function RoomPage() {
           <button className="icon-button" onClick={copyInvite} title="Скопировать invite">
             <Clipboard size={18} />
           </button>
+          {room.currentUserRole === 'owner' && (
+            <button className="icon-button danger" onClick={deleteRoom} title="Удалить комнату">
+              <Trash2 size={18} />
+            </button>
+          )}
           <button className="icon-button danger" onClick={leaveRoom} title="Выйти из комнаты">
             <LogOut size={18} />
           </button>

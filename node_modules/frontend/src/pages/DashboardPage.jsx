@@ -1,4 +1,4 @@
-import { Copy, LogOut, Plus, Users } from 'lucide-react';
+import { Copy, LogOut, Plus, Trash2, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, getApiError } from '../api.js';
@@ -21,6 +21,7 @@ export default function DashboardPage() {
   });
   const [invite, setInvite] = useState('');
   const [error, setError] = useState('');
+  const [deletingRoomId, setDeletingRoomId] = useState('');
 
   async function loadRooms() {
     const response = await api.get('/rooms');
@@ -62,6 +63,24 @@ export default function DashboardPage() {
 
   function copyInvite(room) {
     navigator.clipboard?.writeText(`${window.location.origin}${room.inviteUrl}`);
+  }
+
+  async function deleteRoom(room) {
+    if (!window.confirm(`Удалить комнату "${room.title}"? Сообщения и участники тоже будут удалены.`)) {
+      return;
+    }
+
+    setError('');
+    setDeletingRoomId(room.id);
+
+    try {
+      await api.delete(`/rooms/${room.id}`);
+      setRooms((current) => current.filter((item) => item.id !== room.id));
+    } catch (requestError) {
+      setError(getApiError(requestError));
+    } finally {
+      setDeletingRoomId('');
+    }
   }
 
   return (
@@ -149,10 +168,10 @@ export default function DashboardPage() {
 
       <section className="rooms-list">
         <div className="section-title">
-          <h2>Мои комнаты</h2>
+          <h2>Комнаты, которыми я владею</h2>
         </div>
 
-        {rooms.length === 0 && <p className="muted">Пока нет активных комнат.</p>}
+        {rooms.length === 0 && <p className="muted">Пока нет комнат, которыми вы владеете.</p>}
 
         <div className="room-cards">
           {rooms.map((room) => (
@@ -164,8 +183,17 @@ export default function DashboardPage() {
                 </p>
               </div>
               <div className="card-actions">
-                <button className="icon-button" onClick={() => copyInvite(room)} title="Скопировать invite">
+                <button className="icon-button" type="button" onClick={() => copyInvite(room)} title="Скопировать invite">
                   <Copy size={18} />
+                </button>
+                <button
+                  className="icon-button danger"
+                  type="button"
+                  onClick={() => deleteRoom(room)}
+                  disabled={deletingRoomId === room.id}
+                  title="Удалить комнату"
+                >
+                  <Trash2 size={18} />
                 </button>
                 <Link className="button compact" to={`/rooms/${room.id}`}>
                   Открыть

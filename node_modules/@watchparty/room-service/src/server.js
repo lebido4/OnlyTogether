@@ -239,10 +239,6 @@ app.post(
         throw new AppError(403, 'ROOM_MEMBERSHIP_REQUIRED', 'Only room members can control playback');
       }
 
-      if (!['owner', 'moderator'].includes(member.role)) {
-        throw new AppError(403, 'FORBIDDEN_CONTROL', 'Only owner or moderator can control playback');
-      }
-
       const previousState = room.current_state ?? {};
       const nextStatus =
         action === 'play'
@@ -301,11 +297,14 @@ app.get(
     const rooms = (
       await db.query(
         `SELECT r.*,
-                rm.role AS current_user_role,
+                COALESCE(rm.role, 'owner') AS current_user_role,
                 (SELECT COUNT(*)::int FROM room_members active WHERE active.room_id = r.id AND active.is_active = TRUE) AS active_count
            FROM rooms r
-           JOIN room_members rm ON rm.room_id = r.id
-          WHERE rm.user_id = $1 AND rm.is_active = TRUE
+           LEFT JOIN room_members rm
+                  ON rm.room_id = r.id
+                 AND rm.user_id = $1
+                 AND rm.is_active = TRUE
+          WHERE r.owner_id = $1
           ORDER BY r.updated_at DESC`,
         [req.user.id]
       )
@@ -377,6 +376,33 @@ app.post(
   })
 );
 
+app.delete(
+  '/rooms/:id',
+  asyncHandler(async (req, res) => {
+    const room = await queryOne(db, 'SELECT id, owner_id, title FROM rooms WHERE id = $1', [
+      req.params.id
+    ]);
+
+    if (!room) {
+      throw new AppError(404, 'ROOM_NOT_FOUND', 'Room was not found');
+    }
+
+    if (room.owner_id !== req.user.id) {
+      throw new AppError(403, 'FORBIDDEN_ROOM_DELETE', 'Only the room owner can delete this room');
+    }
+
+    await db.query('DELETE FROM rooms WHERE id = $1', [req.params.id]);
+
+    await publishEvent(redis, 'room:deleted', {
+      roomId: req.params.id,
+      title: room.title,
+      deletedBy: { id: req.user.id, username: req.user.username }
+    });
+
+    res.status(204).send();
+  })
+);
+
 app.get(
   '/rooms/invite/:inviteCode',
   asyncHandler(async (req, res) => {
@@ -413,8 +439,12 @@ app.post(
 app.get(
   '/rooms/:id',
   asyncHandler(async (req, res) => {
-    await assertActiveMember(req.params.id, req.user.id);
-    res.json({ room: await getRoomById(req.params.id, req.user.id) });
+    const room = await getRoomById(req.params.id, req.user.id);
+    if (!room.currentUserRole) {
+      throw new AppError(403, 'ROOM_MEMBERSHIP_REQUIRED', 'Join the room before opening it');
+    }
+
+    res.json({ room });
   })
 );
 

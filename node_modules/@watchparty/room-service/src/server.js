@@ -1,0 +1,476 @@
+import crypto from 'node:crypto';
+import cors from 'cors';
+import express from 'express';
+import {
+  AppError,
+  asyncHandler,
+  authMiddleware,
+  createDbPool,
+  createLogger,
+  createRedisConnection,
+  errorHandler,
+  extractYouTubeVideoId,
+  notFoundHandler,
+  publishEvent,
+  queryOne,
+  requireInteger,
+  requireInternalApiKey,
+  requireString,
+  withTransaction
+} from '@watchparty/shared';
+
+const app = express();
+const logger = createLogger('room-service');
+const db = createDbPool();
+const redis = await createRedisConnection(logger);
+
+app.use(cors({ origin: process.env.FRONTEND_URL ?? true, credentials: true }));
+app.use(express.json());
+
+function inviteCode() {
+  return crypto.randomBytes(9).toString('base64url');
+}
+
+function materializeState(room) {
+  const state = room.current_state ?? {};
+  const basePosition = Number(state.positionSec ?? 0);
+  const status = state.status ?? 'stopped';
+  let positionSec = basePosition;
+
+  if (status === 'playing' && room.state_updated_at) {
+    const delta = (Date.now() - new Date(room.state_updated_at).getTime()) / 1000;
+    positionSec = Math.max(0, basePosition + delta);
+  }
+
+  return {
+    ...state,
+    status,
+    positionSec,
+    videoId: room.youtube_video_id,
+    stateUpdatedAt: room.state_updated_at
+  };
+}
+
+function mapRoom(row, members = []) {
+  return {
+    id: row.id,
+    title: row.title,
+    ownerId: row.owner_id,
+    maxParticipants: row.max_participants,
+    activeCount: Number(row.active_count ?? 0),
+    youtubeUrl: row.youtube_url,
+    youtubeVideoId: row.youtube_video_id,
+    inviteCode: row.invite_code,
+    inviteUrl: `/invite/${row.invite_code}`,
+    currentState: materializeState(row),
+    currentUserRole: row.current_user_role,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    stateUpdatedAt: row.state_updated_at,
+    members
+  };
+}
+
+async function getRoomById(roomId, userId = null) {
+  const room = await queryOne(
+    db,
+    `SELECT r.*,
+            (SELECT COUNT(*)::int FROM room_members rm WHERE rm.room_id = r.id AND rm.is_active = TRUE) AS active_count,
+            (SELECT role FROM room_members rm WHERE rm.room_id = r.id AND rm.user_id = $2 AND rm.is_active = TRUE) AS current_user_role
+       FROM rooms r
+      WHERE r.id = $1`,
+    [roomId, userId]
+  );
+
+  if (!room) {
+    throw new AppError(404, 'ROOM_NOT_FOUND', 'Room was not found');
+  }
+
+  const members = (
+    await db.query(
+      `SELECT rm.user_id AS id,
+              u.username,
+              rm.role,
+              rm.is_active AS "isActive",
+              rm.joined_at AS "joinedAt",
+              rm.left_at AS "leftAt"
+         FROM room_members rm
+         JOIN users u ON u.id = rm.user_id
+        WHERE rm.room_id = $1
+        ORDER BY rm.is_active DESC, rm.joined_at ASC`,
+      [roomId]
+    )
+  ).rows;
+
+  return mapRoom(room, members);
+}
+
+async function assertActiveMember(roomId, userId) {
+  const member = await queryOne(
+    db,
+    'SELECT role FROM room_members WHERE room_id = $1 AND user_id = $2 AND is_active = TRUE',
+    [roomId, userId]
+  );
+
+  if (!member) {
+    throw new AppError(403, 'ROOM_MEMBERSHIP_REQUIRED', 'Join the room before opening it');
+  }
+
+  return member;
+}
+
+async function joinRoom({ roomId, user, inviteCode: expectedInviteCode }) {
+  let joined = false;
+  let roomForEvent;
+
+  await withTransaction(db, async (client) => {
+    const room = (
+      await client.query('SELECT * FROM rooms WHERE id = $1 FOR UPDATE', [roomId])
+    ).rows[0];
+
+    if (!room) {
+      throw new AppError(404, 'ROOM_NOT_FOUND', 'Room was not found');
+    }
+
+    if (expectedInviteCode && room.invite_code !== expectedInviteCode) {
+      throw new AppError(403, 'INVALID_INVITE', 'Invite code does not match this room');
+    }
+
+    const existingMember = (
+      await client.query('SELECT * FROM room_members WHERE room_id = $1 AND user_id = $2', [
+        roomId,
+        user.id
+      ])
+    ).rows[0];
+
+    if (existingMember?.is_active) {
+      roomForEvent = room;
+      return;
+    }
+
+    const activeCount = Number(
+      (
+        await client.query(
+          'SELECT COUNT(*)::int AS count FROM room_members WHERE room_id = $1 AND is_active = TRUE',
+          [roomId]
+        )
+      ).rows[0].count
+    );
+
+    if (activeCount >= room.max_participants) {
+      throw new AppError(409, 'ROOM_IS_FULL', 'Room participant limit has been reached');
+    }
+
+    if (existingMember) {
+      await client.query(
+        `UPDATE room_members
+            SET is_active = TRUE, left_at = NULL, joined_at = NOW()
+          WHERE room_id = $1 AND user_id = $2`,
+        [roomId, user.id]
+      );
+    } else {
+      await client.query(
+        `INSERT INTO room_members (room_id, user_id, role)
+         VALUES ($1, $2, 'participant')`,
+        [roomId, user.id]
+      );
+    }
+
+    await client.query(
+      `INSERT INTO room_events (room_id, user_id, event_type, payload)
+       VALUES ($1, $2, 'room:user_joined', $3::jsonb)`,
+      [roomId, user.id, JSON.stringify({ username: user.username })]
+    );
+
+    joined = true;
+    roomForEvent = room;
+  });
+
+  if (joined) {
+    await publishEvent(redis, 'room:user_joined', {
+      roomId,
+      user: { id: user.id, username: user.username },
+      inviteCode: roomForEvent.invite_code
+    });
+  }
+
+  return getRoomById(roomId, user.id);
+}
+
+app.get('/health', (_req, res) => {
+  res.json({ service: 'room-service', status: 'ok' });
+});
+
+app.post(
+  '/internal/rooms/:id/state',
+  requireInternalApiKey,
+  asyncHandler(async (req, res) => {
+    const userId = requireString(req.body, 'userId', { min: 20, max: 80 });
+    const username = req.body.username ?? 'unknown';
+    const action = requireString(req.body, 'action', { min: 4, max: 10 });
+    const allowed = new Set(['play', 'pause', 'seek', 'stop']);
+
+    if (!allowed.has(action)) {
+      throw new AppError(400, 'INVALID_SYNC_ACTION', 'Sync action is not supported');
+    }
+
+    const positionSec = Math.max(0, Number(req.body.positionSec ?? 0));
+    if (!Number.isFinite(positionSec)) {
+      throw new AppError(400, 'INVALID_POSITION', 'positionSec must be a number');
+    }
+
+    const state = await withTransaction(db, async (client) => {
+      const room = (
+        await client.query('SELECT * FROM rooms WHERE id = $1 FOR UPDATE', [req.params.id])
+      ).rows[0];
+
+      if (!room) {
+        throw new AppError(404, 'ROOM_NOT_FOUND', 'Room was not found');
+      }
+
+      const member = (
+        await client.query(
+          'SELECT role FROM room_members WHERE room_id = $1 AND user_id = $2 AND is_active = TRUE',
+          [req.params.id, userId]
+        )
+      ).rows[0];
+
+      if (!member) {
+        throw new AppError(403, 'ROOM_MEMBERSHIP_REQUIRED', 'Only room members can control playback');
+      }
+
+      if (!['owner', 'moderator'].includes(member.role)) {
+        throw new AppError(403, 'FORBIDDEN_CONTROL', 'Only owner or moderator can control playback');
+      }
+
+      const previousState = room.current_state ?? {};
+      const nextStatus =
+        action === 'play'
+          ? 'playing'
+          : action === 'pause'
+            ? 'paused'
+            : action === 'stop'
+              ? 'stopped'
+              : previousState.status ?? 'paused';
+
+      const nextState = {
+        status: nextStatus,
+        positionSec: action === 'stop' ? 0 : positionSec,
+        videoId: room.youtube_video_id,
+        action,
+        updatedBy: { id: userId, username },
+        updatedAt: new Date().toISOString()
+      };
+
+      await client.query(
+        `UPDATE rooms
+            SET current_state = $2::jsonb,
+                state_updated_at = NOW()
+          WHERE id = $1`,
+        [req.params.id, JSON.stringify(nextState)]
+      );
+
+      await client.query(
+        `INSERT INTO room_events (room_id, user_id, event_type, payload)
+         VALUES ($1, $2, $3, $4::jsonb)`,
+        [req.params.id, userId, `sync:video_${action}`, JSON.stringify(nextState)]
+      );
+
+      return nextState;
+    });
+
+    const payload = {
+      roomId: req.params.id,
+      action,
+      state,
+      updatedBy: state.updatedBy
+    };
+
+    await publishEvent(redis, `sync:video_${action}`, payload);
+    await publishEvent(redis, 'sync:state_updated', payload);
+
+    res.json(payload);
+  })
+);
+
+app.use(authMiddleware);
+
+app.get(
+  '/rooms',
+  asyncHandler(async (req, res) => {
+    const rooms = (
+      await db.query(
+        `SELECT r.*,
+                rm.role AS current_user_role,
+                (SELECT COUNT(*)::int FROM room_members active WHERE active.room_id = r.id AND active.is_active = TRUE) AS active_count
+           FROM rooms r
+           JOIN room_members rm ON rm.room_id = r.id
+          WHERE rm.user_id = $1 AND rm.is_active = TRUE
+          ORDER BY r.updated_at DESC`,
+        [req.user.id]
+      )
+    ).rows.map((row) => mapRoom(row));
+
+    res.json({ rooms });
+  })
+);
+
+app.post(
+  '/rooms',
+  asyncHandler(async (req, res) => {
+    const title = requireString(req.body, 'title', { min: 2, max: 120 });
+    const maxParticipants = requireInteger(req.body, 'maxParticipants', { min: 2, max: 50 });
+    const youtubeUrl = requireString(req.body, 'youtubeUrl', { min: 10, max: 500 });
+    const youtubeVideoId = extractYouTubeVideoId(youtubeUrl);
+
+    const room = await withTransaction(db, async (client) => {
+      const code = inviteCode();
+      const initialState = {
+        status: 'stopped',
+        positionSec: 0,
+        videoId: youtubeVideoId,
+        updatedBy: { id: req.user.id, username: req.user.username },
+        updatedAt: new Date().toISOString()
+      };
+
+      const createdRoom = (
+        await client.query(
+          `INSERT INTO rooms (owner_id, title, max_participants, youtube_url, youtube_video_id, invite_code, current_state)
+           VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+           RETURNING *`,
+          [
+            req.user.id,
+            title,
+            maxParticipants,
+            youtubeUrl,
+            youtubeVideoId,
+            code,
+            JSON.stringify(initialState)
+          ]
+        )
+      ).rows[0];
+
+      await client.query(
+        `INSERT INTO room_members (room_id, user_id, role)
+         VALUES ($1, $2, 'owner')`,
+        [createdRoom.id, req.user.id]
+      );
+
+      await client.query(
+        `INSERT INTO room_events (room_id, user_id, event_type, payload)
+         VALUES ($1, $2, 'room:created', $3::jsonb)`,
+        [createdRoom.id, req.user.id, JSON.stringify({ title, youtubeVideoId })]
+      );
+
+      return createdRoom;
+    });
+
+    await publishEvent(redis, 'room:created', {
+      roomId: room.id,
+      ownerId: req.user.id,
+      title: room.title,
+      youtubeVideoId: room.youtube_video_id,
+      inviteCode: room.invite_code
+    });
+
+    res.status(201).json({ room: await getRoomById(room.id, req.user.id) });
+  })
+);
+
+app.get(
+  '/rooms/invite/:inviteCode',
+  asyncHandler(async (req, res) => {
+    const room = await queryOne(
+      db,
+      `SELECT r.*,
+              (SELECT COUNT(*)::int FROM room_members active WHERE active.room_id = r.id AND active.is_active = TRUE) AS active_count,
+              NULL AS current_user_role
+         FROM rooms r
+        WHERE r.invite_code = $1`,
+      [req.params.inviteCode]
+    );
+
+    if (!room) {
+      throw new AppError(404, 'INVITE_NOT_FOUND', 'Invite link is invalid');
+    }
+
+    res.json({ room: mapRoom(room) });
+  })
+);
+
+app.post(
+  '/rooms/invite/:inviteCode/join',
+  asyncHandler(async (req, res) => {
+    const room = await queryOne(db, 'SELECT id FROM rooms WHERE invite_code = $1', [req.params.inviteCode]);
+    if (!room) {
+      throw new AppError(404, 'INVITE_NOT_FOUND', 'Invite link is invalid');
+    }
+
+    res.json({ room: await joinRoom({ roomId: room.id, user: req.user, inviteCode: req.params.inviteCode }) });
+  })
+);
+
+app.get(
+  '/rooms/:id',
+  asyncHandler(async (req, res) => {
+    await assertActiveMember(req.params.id, req.user.id);
+    res.json({ room: await getRoomById(req.params.id, req.user.id) });
+  })
+);
+
+app.post(
+  '/rooms/:id/join',
+  asyncHandler(async (req, res) => {
+    res.json({
+      room: await joinRoom({
+        roomId: req.params.id,
+        user: req.user,
+        inviteCode: req.body?.inviteCode
+      })
+    });
+  })
+);
+
+app.post(
+  '/rooms/:id/leave',
+  asyncHandler(async (req, res) => {
+    const left = await withTransaction(db, async (client) => {
+      const member = (
+        await client.query(
+          `UPDATE room_members
+              SET is_active = FALSE, left_at = NOW()
+            WHERE room_id = $1 AND user_id = $2 AND is_active = TRUE
+            RETURNING role`,
+          [req.params.id, req.user.id]
+        )
+      ).rows[0];
+
+      if (!member) {
+        throw new AppError(404, 'ACTIVE_MEMBERSHIP_NOT_FOUND', 'Active room membership was not found');
+      }
+
+      await client.query(
+        `INSERT INTO room_events (room_id, user_id, event_type, payload)
+         VALUES ($1, $2, 'room:user_left', $3::jsonb)`,
+        [req.params.id, req.user.id, JSON.stringify({ username: req.user.username })]
+      );
+
+      return true;
+    });
+
+    if (left) {
+      await publishEvent(redis, 'room:user_left', {
+        roomId: req.params.id,
+        user: { id: req.user.id, username: req.user.username }
+      });
+    }
+
+    res.status(204).send();
+  })
+);
+
+app.use(notFoundHandler);
+app.use(errorHandler(logger));
+
+const port = Number(process.env.ROOM_SERVICE_PORT ?? 3002);
+app.listen(port, () => logger.info({ port }, 'Room service started'));

@@ -1,0 +1,133 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-watchparty}
+      POSTGRES_USER: ${POSTGRES_USER:-watchparty}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-watchparty}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: services/auth-service/Dockerfile
+    environment:
+      AUTH_SERVICE_PORT: 3001
+      DATABASE_URL: postgres://${POSTGRES_USER:-watchparty}:${POSTGRES_PASSWORD:-watchparty}@postgres:5432/${POSTGRES_DB:-watchparty}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-dev-secret}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-local-internal-key}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  room-service:
+    build:
+      context: .
+      dockerfile: services/room-service/Dockerfile
+    environment:
+      ROOM_SERVICE_PORT: 3002
+      DATABASE_URL: postgres://${POSTGRES_USER:-watchparty}:${POSTGRES_PASSWORD:-watchparty}@postgres:5432/${POSTGRES_DB:-watchparty}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-dev-secret}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-local-internal-key}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  chat-service:
+    build:
+      context: .
+      dockerfile: services/chat-service/Dockerfile
+    environment:
+      CHAT_SERVICE_PORT: 3003
+      DATABASE_URL: postgres://${POSTGRES_USER:-watchparty}:${POSTGRES_PASSWORD:-watchparty}@postgres:5432/${POSTGRES_DB:-watchparty}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-dev-secret}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-local-internal-key}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  realtime-service:
+    build:
+      context: .
+      dockerfile: services/realtime-service/Dockerfile
+    environment:
+      REALTIME_SERVICE_PORT: 3004
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-dev-secret}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-local-internal-key}
+      ROOM_SERVICE_URL: http://room-service:3002
+      CHAT_SERVICE_URL: http://chat-service:3003
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+    depends_on:
+      redis:
+        condition: service_healthy
+      room-service:
+        condition: service_started
+      chat-service:
+        condition: service_started
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
+    environment:
+      API_GATEWAY_PORT: 8080
+      JWT_SECRET: ${JWT_SECRET:-dev-secret}
+      AUTH_SERVICE_URL: http://auth-service:3001
+      ROOM_SERVICE_URL: http://room-service:3002
+      CHAT_SERVICE_URL: http://chat-service:3003
+      REALTIME_SERVICE_URL: http://realtime-service:3004
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+    ports:
+      - "8080:8080"
+    depends_on:
+      - auth-service
+      - room-service
+      - chat-service
+      - realtime-service
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:8080}
+      VITE_SOCKET_URL: ${VITE_SOCKET_URL:-http://localhost:8080}
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api-gateway
+
+volumes:
+  postgres_data:

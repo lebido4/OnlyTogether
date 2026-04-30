@@ -47,7 +47,7 @@ export default function HomePage() {
           <p className="eyebrow">Совместный просмотр без суеты</p>
           <h1>OnlyTogether</h1>
           <p className="home-lead">
-            Соберите друзей в приватной комнате, включите YouTube-видео и смотрите его в одном ритме с
+            Соберите друзей в приватной комнате, включите видео и смотрите его в одном ритме с
             чатом, invite-ссылками и синхронизацией управления.
           </p>
           <div className="hero-actions">

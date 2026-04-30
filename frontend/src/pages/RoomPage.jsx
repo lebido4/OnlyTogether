@@ -4,14 +4,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { api, getApiError } from '../api.js';
 import ChatPanel from '../components/ChatPanel.jsx';
-import YouTubePlayer from '../components/YouTubePlayer.jsx';
+import VideoPlayer from '../components/VideoPlayer.jsx';
 import { useAuth } from '../state/AuthContext.jsx';
-
-const PLAYER_STATE = {
-  ENDED: 0,
-  PLAYING: 1,
-  PAUSED: 2
-};
 
 function formatSeconds(value) {
   const safe = Math.max(0, Math.floor(value || 0));
@@ -85,14 +79,15 @@ export default function RoomPage() {
         return;
       }
 
+      const status = typeof state === 'string' ? state : state?.status;
       const position = playerRef.current?.getCurrentTime() ?? currentTime;
-      if (state === PLAYER_STATE.PLAYING) {
+      if (status === 'playing') {
         sendSync('play', position);
       }
-      if (state === PLAYER_STATE.PAUSED) {
+      if (status === 'paused') {
         sendSync('pause', position);
       }
-      if (state === PLAYER_STATE.ENDED) {
+      if (status === 'ended') {
         sendSync('stop', 0);
       }
     },
@@ -113,6 +108,7 @@ export default function RoomPage() {
         }
         setRoom(roomResponse.data.room);
         setMessages(messagesResponse.data.messages);
+        setPlayerReady(false);
         pendingStateRef.current = roomResponse.data.room.currentState;
       } catch (requestError) {
         setError(getApiError(requestError));
@@ -262,7 +258,8 @@ export default function RoomPage() {
           <p className="eyebrow">Комната</p>
           <h1>{room.title}</h1>
           <p className="muted">
-            {presence.count || room.activeCount}/{room.maxParticipants} онлайн · роль {room.currentUserRole}
+            {presence.count || room.activeCount}/{room.maxParticipants} онлайн · {room.videoProviderLabel} · роль{' '}
+            {room.currentUserRole}
           </p>
         </div>
         <div className="room-actions">
@@ -287,9 +284,11 @@ export default function RoomPage() {
 
       <section className="watch-grid">
         <div className="video-panel">
-          <YouTubePlayer
+          <VideoPlayer
             ref={playerRef}
-            videoId={room.youtubeVideoId}
+            provider={room.videoProvider}
+            videoId={room.videoId}
+            embedUrl={room.videoEmbedUrl}
             onReady={() => setPlayerReady(true)}
             onStateChange={handlePlayerState}
           />

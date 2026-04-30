@@ -17,7 +17,7 @@ export default function DashboardPage() {
   const [createForm, setCreateForm] = useState({
     title: '',
     maxParticipants: 8,
-    youtubeUrl: ''
+    videoUrl: ''
   });
   const [invite, setInvite] = useState('');
   const [error, setError] = useState('');
@@ -40,7 +40,7 @@ export default function DashboardPage() {
       const response = await api.post('/rooms', {
         title: createForm.title,
         maxParticipants: Number(createForm.maxParticipants),
-        youtubeUrl: createForm.youtubeUrl
+        videoUrl: createForm.videoUrl
       });
       navigate(`/rooms/${response.data.room.id}`);
     } catch (requestError) {
@@ -129,13 +129,13 @@ export default function DashboardPage() {
             />
           </label>
           <label>
-            YouTube URL
+            Ссылка на видео
             <input
-              value={createForm.youtubeUrl}
+              value={createForm.videoUrl}
               onChange={(event) =>
-                setCreateForm((current) => ({ ...current, youtubeUrl: event.target.value }))
+                setCreateForm((current) => ({ ...current, videoUrl: event.target.value }))
               }
-              placeholder="https://www.youtube.com/watch?v=..."
+              placeholder="YouTube, VK Video или RUTUBE"
               required
             />
           </label>
@@ -177,7 +177,10 @@ export default function DashboardPage() {
           {rooms.map((room) => (
             <article className="room-card" key={room.id}>
               <div>
-                <h3>{room.title}</h3>
+                <div className="room-title-line">
+                  <h3>{room.title}</h3>
+                  <span className="video-provider-badge">{room.videoProviderLabel ?? 'Video'}</span>
+                </div>
                 <p>
                   {room.activeCount}/{room.maxParticipants} участников · {room.currentUserRole}
                 </p>

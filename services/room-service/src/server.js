@@ -9,8 +9,8 @@ import {
   createLogger,
   createRedisConnection,
   errorHandler,
-  extractYouTubeVideoId,
   notFoundHandler,
+  parseVideoSource,
   publishEvent,
   queryOne,
   requireInteger,
@@ -27,8 +27,59 @@ const redis = await createRedisConnection(logger);
 app.use(cors({ origin: process.env.FRONTEND_URL ?? true, credentials: true }));
 app.use(express.json());
 
+const providerLabels = {
+  youtube: 'YouTube',
+  vk: 'VK Video',
+  rutube: 'RUTUBE'
+};
+
+async function ensureRoomVideoColumns() {
+  await db.query(`
+    ALTER TABLE rooms
+      ADD COLUMN IF NOT EXISTS video_provider TEXT NOT NULL DEFAULT 'youtube',
+      ADD COLUMN IF NOT EXISTS video_url TEXT,
+      ADD COLUMN IF NOT EXISTS video_id TEXT,
+      ADD COLUMN IF NOT EXISTS video_embed_url TEXT
+  `);
+
+  await db.query(`
+    UPDATE rooms
+       SET video_provider = COALESCE(video_provider, 'youtube'),
+           video_url = COALESCE(video_url, youtube_url),
+           video_id = COALESCE(video_id, youtube_video_id)
+     WHERE video_url IS NULL
+        OR video_id IS NULL
+        OR video_provider IS NULL
+  `);
+}
+
+await ensureRoomVideoColumns();
+
 function inviteCode() {
   return crypto.randomBytes(9).toString('base64url');
+}
+
+function getVideoSource(row) {
+  const provider = row.video_provider ?? 'youtube';
+  const videoUrl = row.video_url ?? row.youtube_url;
+  const videoId = row.video_id ?? row.youtube_video_id;
+  let embedUrl = row.video_embed_url;
+
+  if (!embedUrl && videoUrl) {
+    try {
+      embedUrl = parseVideoSource(videoUrl).embedUrl;
+    } catch {
+      embedUrl = null;
+    }
+  }
+
+  return {
+    provider,
+    providerLabel: providerLabels[provider] ?? provider,
+    videoId,
+    videoUrl,
+    embedUrl
+  };
 }
 
 function materializeState(room) {
@@ -36,6 +87,7 @@ function materializeState(room) {
   const basePosition = Number(state.positionSec ?? 0);
   const status = state.status ?? 'stopped';
   let positionSec = basePosition;
+  const videoSource = getVideoSource(room);
 
   if (status === 'playing' && room.state_updated_at) {
     const delta = (Date.now() - new Date(room.state_updated_at).getTime()) / 1000;
@@ -46,18 +98,27 @@ function materializeState(room) {
     ...state,
     status,
     positionSec,
-    videoId: room.youtube_video_id,
+    videoId: videoSource.videoId,
+    videoProvider: videoSource.provider,
     stateUpdatedAt: room.state_updated_at
   };
 }
 
 function mapRoom(row, members = []) {
+  const videoSource = getVideoSource(row);
+
   return {
     id: row.id,
     title: row.title,
     ownerId: row.owner_id,
     maxParticipants: row.max_participants,
     activeCount: Number(row.active_count ?? 0),
+    videoProvider: videoSource.provider,
+    videoProviderLabel: videoSource.providerLabel,
+    videoUrl: videoSource.videoUrl,
+    videoId: videoSource.videoId,
+    videoEmbedUrl: videoSource.embedUrl,
+    videoSource,
     youtubeUrl: row.youtube_url,
     youtubeVideoId: row.youtube_video_id,
     inviteCode: row.invite_code,
@@ -248,11 +309,13 @@ app.post(
             : action === 'stop'
               ? 'stopped'
               : previousState.status ?? 'paused';
+      const videoSource = getVideoSource(room);
 
       const nextState = {
         status: nextStatus,
         positionSec: action === 'stop' ? 0 : positionSec,
-        videoId: room.youtube_video_id,
+        videoId: videoSource.videoId,
+        videoProvider: videoSource.provider,
         action,
         updatedBy: { id: userId, username },
         updatedAt: new Date().toISOString()
@@ -319,30 +382,51 @@ app.post(
   asyncHandler(async (req, res) => {
     const title = requireString(req.body, 'title', { min: 2, max: 120 });
     const maxParticipants = requireInteger(req.body, 'maxParticipants', { min: 2, max: 50 });
-    const youtubeUrl = requireString(req.body, 'youtubeUrl', { min: 10, max: 500 });
-    const youtubeVideoId = extractYouTubeVideoId(youtubeUrl);
+    const rawVideoUrl = requireString(
+      { videoUrl: req.body.videoUrl ?? req.body.youtubeUrl },
+      'videoUrl',
+      { min: 10, max: 900 }
+    );
+    const videoSource = parseVideoSource(rawVideoUrl);
 
     const room = await withTransaction(db, async (client) => {
       const code = inviteCode();
       const initialState = {
         status: 'stopped',
         positionSec: 0,
-        videoId: youtubeVideoId,
+        videoId: videoSource.videoId,
+        videoProvider: videoSource.provider,
         updatedBy: { id: req.user.id, username: req.user.username },
         updatedAt: new Date().toISOString()
       };
 
       const createdRoom = (
         await client.query(
-          `INSERT INTO rooms (owner_id, title, max_participants, youtube_url, youtube_video_id, invite_code, current_state)
-           VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+          `INSERT INTO rooms (
+             owner_id,
+             title,
+             max_participants,
+             youtube_url,
+             youtube_video_id,
+             video_provider,
+             video_url,
+             video_id,
+             video_embed_url,
+             invite_code,
+             current_state
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)
            RETURNING *`,
           [
             req.user.id,
             title,
             maxParticipants,
-            youtubeUrl,
-            youtubeVideoId,
+            videoSource.videoUrl,
+            videoSource.videoId,
+            videoSource.provider,
+            videoSource.videoUrl,
+            videoSource.videoId,
+            videoSource.embedUrl,
             code,
             JSON.stringify(initialState)
           ]
@@ -358,7 +442,7 @@ app.post(
       await client.query(
         `INSERT INTO room_events (room_id, user_id, event_type, payload)
          VALUES ($1, $2, 'room:created', $3::jsonb)`,
-        [createdRoom.id, req.user.id, JSON.stringify({ title, youtubeVideoId })]
+        [createdRoom.id, req.user.id, JSON.stringify({ title, videoSource })]
       );
 
       return createdRoom;
@@ -368,7 +452,9 @@ app.post(
       roomId: room.id,
       ownerId: req.user.id,
       title: room.title,
-      youtubeVideoId: room.youtube_video_id,
+      videoProvider: room.video_provider,
+      videoId: room.video_id,
+      videoSource: getVideoSource(room),
       inviteCode: room.invite_code
     });
 

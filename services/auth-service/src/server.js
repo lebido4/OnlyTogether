@@ -15,7 +15,7 @@ import {
   requireString,
   signAccessToken,
   validateEmail
-} from '@watchparty/shared';
+} from '@onlytogether/shared';
 
 const app = express();
 const logger = createLogger('auth-service');

@@ -266,7 +266,7 @@ export default function RoomPage() {
           </p>
         </div>
         <div className="room-actions">
-          <button className="icon-button" onClick={copyInvite} title="Скопировать invite">
+          <button className="icon-button" onClick={copyInvite} title="Скопировать приглашение">
             <Clipboard size={18} />
           </button>
           {room.currentUserRole === 'owner' && (
@@ -278,7 +278,7 @@ export default function RoomPage() {
             <LogOut size={18} />
           </button>
           <Link className="button compact" to="/dashboard">
-            Dashboard
+            Комнаты
           </Link>
         </div>
       </header>

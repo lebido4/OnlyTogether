@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-export const TOKEN_STORAGE_KEY = 'watchparty.accessToken';
+export const TOKEN_STORAGE_KEY = 'onlytogether.accessToken';
 
 export function getStoredToken() {
   return localStorage.getItem(TOKEN_STORAGE_KEY);

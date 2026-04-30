@@ -39,8 +39,11 @@ export default function AuthPage({ mode }) {
     <main className="auth-layout">
       <section className="auth-card">
         <div>
-          <p className="eyebrow">Watch Party MVP</p>
+          <p className="eyebrow">OnlyTogether</p>
           <h1>{isRegister ? 'Регистрация' : 'Вход'}</h1>
+          <p className="muted">
+            {isRegister ? 'Создайте аккаунт для приватных комнат.' : 'Вернитесь к своим комнатам просмотра.'}
+          </p>
         </div>
 
         <form onSubmit={submit} className="stack">

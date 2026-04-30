@@ -17,7 +17,7 @@ import {
   requireInternalApiKey,
   requireString,
   withTransaction
-} from '@watchparty/shared';
+} from '@onlytogether/shared';
 
 const app = express();
 const logger = createLogger('room-service');

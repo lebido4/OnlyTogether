@@ -9,7 +9,7 @@ import {
   createLogger,
   errorHandler,
   notFoundHandler
-} from '@watchparty/shared';
+} from '@onlytogether/shared';
 
 const app = express();
 const server = http.createServer(app);

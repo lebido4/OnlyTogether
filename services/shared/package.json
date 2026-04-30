@@ -1,5 +1,5 @@
 {
-  "name": "@watchparty/shared",
+  "name": "@onlytogether/shared",
   "version": "0.1.0",
   "type": "module",
   "main": "src/index.js",

@@ -87,7 +87,7 @@ export default function DashboardPage() {
     <main className="app-shell">
       <header className="topbar">
         <div>
-          <p className="eyebrow">Watch Party</p>
+          <p className="eyebrow">OnlyTogether</p>
           <h1>Комнаты</h1>
         </div>
         <div className="user-box">
@@ -147,7 +147,7 @@ export default function DashboardPage() {
 
         <form className="panel stack" onSubmit={joinInvite}>
           <div className="panel-header">
-            <h2>Invite</h2>
+            <h2>Приглашение</h2>
             <Users size={20} />
           </div>
           <label>
@@ -183,7 +183,7 @@ export default function DashboardPage() {
                 </p>
               </div>
               <div className="card-actions">
-                <button className="icon-button" type="button" onClick={() => copyInvite(room)} title="Скопировать invite">
+                <button className="icon-button" type="button" onClick={() => copyInvite(room)} title="Скопировать приглашение">
                   <Copy size={18} />
                 </button>
                 <button

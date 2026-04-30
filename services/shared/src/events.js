@@ -17,7 +17,7 @@ export async function publishEvent(redis, type, payload) {
   await redis.publish(type, JSON.stringify(envelope));
 
   try {
-    await redis.xAdd('watchparty:events', '*', {
+    await redis.xAdd('onlytogether:events', '*', {
       type,
       occurredAt: envelope.occurredAt,
       payload: JSON.stringify(payload)

@@ -1,6 +1,6 @@
-# Watch Party MVP
+# OnlyTogether
 
-MVP веб-приложения для совместного просмотра одного YouTube-видео с синхронизацией плеера и чатом.
+Веб-приложение для совместного просмотра одного YouTube-видео с синхронизацией плеера и чатом.
 
 ## Краткая Архитектурная Схема
 
@@ -30,7 +30,7 @@ flowchart LR
 - `chat-service`: история сообщений, отправка сообщений, системные сообщения по событиям входа/выхода.
 - `realtime-service`: Socket.io, presence в Redis, трансляция Redis-событий в комнаты, приём команд чата и плеера.
 - `postgres`: основная БД.
-- `redis`: pub/sub для realtime-событий, stream `watchparty:events`, short-lived presence.
+- `redis`: pub/sub для realtime-событий, stream `onlytogether:events`, short-lived presence.
 
 ## Схема БД
 
@@ -366,7 +366,7 @@ Socket.io клиент подключается к `VITE_SOCKET_URL` с `auth: {
 cp .env.example .env
 ```
 
-2. Запустить весь MVP:
+2. Запустить OnlyTogether:
 
 ```bash
 docker compose up --build

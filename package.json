@@ -1,8 +1,8 @@
 {
-  "name": "watch-party-mvp",
+  "name": "onlytogether",
   "version": "0.1.0",
   "private": true,
-  "description": "MVP сервиса совместного просмотра YouTube-видео с чатом на микросервисной архитектуре.",
+  "description": "OnlyTogether: сервис совместного просмотра YouTube-видео с чатом на микросервисной архитектуре.",
   "workspaces": [
     "services/*",
     "frontend"
@@ -10,11 +10,11 @@
   "scripts": {
     "docker:up": "docker compose up --build",
     "docker:down": "docker compose down -v",
-    "dev:gateway": "npm --workspace @watchparty/api-gateway run dev",
-    "dev:auth": "npm --workspace @watchparty/auth-service run dev",
-    "dev:room": "npm --workspace @watchparty/room-service run dev",
-    "dev:chat": "npm --workspace @watchparty/chat-service run dev",
-    "dev:realtime": "npm --workspace @watchparty/realtime-service run dev",
+    "dev:gateway": "npm --workspace @onlytogether/api-gateway run dev",
+    "dev:auth": "npm --workspace @onlytogether/auth-service run dev",
+    "dev:room": "npm --workspace @onlytogether/room-service run dev",
+    "dev:chat": "npm --workspace @onlytogether/chat-service run dev",
+    "dev:realtime": "npm --workspace @onlytogether/realtime-service run dev",
     "dev:frontend": "npm --workspace frontend run dev"
   }
 }

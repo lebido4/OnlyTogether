@@ -2,9 +2,9 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-watchparty}
-      POSTGRES_USER: ${POSTGRES_USER:-watchparty}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-watchparty}
+      POSTGRES_DB: ${POSTGRES_DB:-onlytogether}
+      POSTGRES_USER: ${POSTGRES_USER:-onlytogether}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-onlytogether}
     ports:
       - "5432:5432"
     volumes:
@@ -32,7 +32,7 @@ services:
       dockerfile: services/auth-service/Dockerfile
     environment:
       AUTH_SERVICE_PORT: 3001
-      DATABASE_URL: postgres://${POSTGRES_USER:-watchparty}:${POSTGRES_PASSWORD:-watchparty}@postgres:5432/${POSTGRES_DB:-watchparty}
+      DATABASE_URL: postgres://${POSTGRES_USER:-onlytogether}:${POSTGRES_PASSWORD:-onlytogether}@postgres:5432/${POSTGRES_DB:-onlytogether}
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:-dev-secret}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:-local-internal-key}
@@ -49,7 +49,7 @@ services:
       dockerfile: services/room-service/Dockerfile
     environment:
       ROOM_SERVICE_PORT: 3002
-      DATABASE_URL: postgres://${POSTGRES_USER:-watchparty}:${POSTGRES_PASSWORD:-watchparty}@postgres:5432/${POSTGRES_DB:-watchparty}
+      DATABASE_URL: postgres://${POSTGRES_USER:-onlytogether}:${POSTGRES_PASSWORD:-onlytogether}@postgres:5432/${POSTGRES_DB:-onlytogether}
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:-dev-secret}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:-local-internal-key}
@@ -66,7 +66,7 @@ services:
       dockerfile: services/chat-service/Dockerfile
     environment:
       CHAT_SERVICE_PORT: 3003
-      DATABASE_URL: postgres://${POSTGRES_USER:-watchparty}:${POSTGRES_PASSWORD:-watchparty}@postgres:5432/${POSTGRES_DB:-watchparty}
+      DATABASE_URL: postgres://${POSTGRES_USER:-onlytogether}:${POSTGRES_PASSWORD:-onlytogether}@postgres:5432/${POSTGRES_DB:-onlytogether}
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:-dev-secret}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:-local-internal-key}

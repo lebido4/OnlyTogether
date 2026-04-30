@@ -144,7 +144,7 @@ Response `201`:
     "videoProviderLabel": "YouTube",
     "videoId": "dQw4w9WgXcQ",
     "videoUrl": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-    "videoEmbedUrl": "https://www.youtube.com/embed/dQw4w9WgXcQ",
+    "videoEmbedUrl": "https://www.youtube.com/embed/dQw4w9WgXcQ?enablejsapi=1",
     "inviteCode": "code",
     "inviteUrl": "/invite/code",
     "currentUserRole": "owner",
@@ -385,6 +385,21 @@ docker compose up --build
 
 - frontend: `http://localhost:5173`
 - API gateway health: `http://localhost:8080/health`
+
+### YouTube И HTTPS Dev-Домен
+
+YouTube iframe может показывать антибот-плашку на `localhost`, в свежих профилях браузера, при VPN/прокси или строгой блокировке third-party cookies. Приложение использует официальный YouTube IFrame API, передает `enablejsapi=1` и указывает `origin`.
+
+Для проверки YouTube лучше поднимать frontend и gateway на HTTPS dev-домене или через туннель. Минимальные переменные:
+
+```env
+FRONTEND_URL=https://your-app.ngrok.app
+VITE_PUBLIC_ORIGIN=https://your-app.ngrok.app
+VITE_API_URL=https://your-api.ngrok.app
+VITE_SOCKET_URL=https://your-api.ngrok.app
+```
+
+`VITE_PUBLIC_ORIGIN` должен совпадать с origin страницы, где открыт iframe. Если переменная не задана, frontend использует `window.location.origin`.
 
 ## Структура Проекта
 

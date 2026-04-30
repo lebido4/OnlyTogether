@@ -88,12 +88,15 @@ function parseYouTubeSource(rawUrl) {
     throw new AppError(400, 'UNSUPPORTED_VIDEO_URL', 'Only YouTube video URLs are supported');
   }
 
+  const embedUrl = new URL(`https://www.youtube.com/embed/${videoId}`);
+  embedUrl.searchParams.set('enablejsapi', '1');
+
   return {
     provider: 'youtube',
     providerLabel: 'YouTube',
     videoId,
     videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
-    embedUrl: `https://www.youtube.com/embed/${videoId}`
+    embedUrl: embedUrl.toString()
   };
 }
 

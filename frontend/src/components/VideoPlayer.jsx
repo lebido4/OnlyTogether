@@ -45,6 +45,19 @@ function loadVkApi() {
   return vkApiPromise;
 }
 
+function getHostPageOrigin() {
+  const configuredOrigin = import.meta.env.VITE_PUBLIC_ORIGIN?.trim();
+  if (configuredOrigin) {
+    try {
+      return new URL(configuredOrigin).origin;
+    } catch {
+      return window.location.origin;
+    }
+  }
+
+  return window.location.origin;
+}
+
 function normalizeRutubeState(state) {
   const value = String(state ?? '').toLowerCase();
   if (['playing', 'play'].includes(value)) {
@@ -142,9 +155,10 @@ const VideoPlayer = forwardRef(function VideoPlayer(
         width: '100%',
         height: '100%',
         playerVars: {
+          enablejsapi: 1,
+          playsinline: 1,
           rel: 0,
-          modestbranding: 1,
-          origin: window.location.origin
+          origin: getHostPageOrigin()
         },
         events: {
           onReady: () => notifyReady(),

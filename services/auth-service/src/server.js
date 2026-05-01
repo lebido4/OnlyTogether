@@ -80,7 +80,7 @@ app.post(
   asyncHandler(async (req, res) => {
     const email = validateEmail(requireString(req.body, 'email', { min: 5, max: 255 }));
     const password = requireString(req.body, 'password', { min: 1, max: 128 });
-
+    console.log(`Instance: ${process.pid}`);
     const user = await queryOne(
       db,
       'SELECT id, email, username, password_hash, created_at FROM users WHERE email = $1',
@@ -90,7 +90,7 @@ app.post(
     if (!user || !(await bcrypt.compare(password, user.password_hash))) {
       throw new AppError(401, 'INVALID_CREDENTIALS', 'Email or password is incorrect');
     }
-
+    
     res.json({
       user: mapUser(user),
       accessToken: signAccessToken(user)

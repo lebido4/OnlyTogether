@@ -1,12 +1,12 @@
-# Watch Party MVP
+# OnlyTogether
 
-MVP веб-приложения для совместного просмотра одного YouTube-видео с синхронизацией плеера и чатом.
+Веб-приложение для совместного просмотра видео с YouTube, VK Video и RUTUBE с синхронизацией плеера и чатом.
 
 ## Краткая Архитектурная Схема
 
 ```mermaid
 flowchart LR
-  Browser["React frontend<br/>YouTube IFrame API"] --> Gateway["API Gateway<br/>Node.js"]
+  Browser["React frontend<br/>Video player adapters"] --> Gateway["API Gateway<br/>Node.js"]
   Browser <-->|Socket.io| Gateway
   Gateway --> Auth["Auth Service"]
   Gateway --> Room["Room Service"]
@@ -30,7 +30,7 @@ flowchart LR
 - `chat-service`: история сообщений, отправка сообщений, системные сообщения по событиям входа/выхода.
 - `realtime-service`: Socket.io, presence в Redis, трансляция Redis-событий в комнаты, приём команд чата и плеера.
 - `postgres`: основная БД.
-- `redis`: pub/sub для realtime-событий, stream `watchparty:events`, short-lived presence.
+- `redis`: pub/sub для realtime-событий, stream `onlytogether:events`, short-lived presence.
 
 ## Схема БД
 
@@ -40,7 +40,9 @@ flowchart LR
 users(id, email, username, password_hash, created_at, updated_at)
 rooms(
   id, owner_id, title, max_participants,
-  youtube_url, youtube_video_id, invite_code,
+  youtube_url, youtube_video_id,
+  video_provider, video_url, video_id, video_embed_url,
+  invite_code,
   current_state jsonb, state_updated_at, created_at, updated_at
 )
 room_members(id, room_id, user_id, role, joined_at, left_at, is_active)
@@ -55,6 +57,7 @@ room_events(id, room_id, user_id, event_type, payload jsonb, created_at)
   "status": "playing | paused | stopped",
   "positionSec": 42.5,
   "videoId": "dQw4w9WgXcQ",
+  "videoProvider": "youtube | vk | rutube",
   "action": "play",
   "updatedBy": { "id": "user-uuid", "username": "alice" },
   "updatedAt": "2026-04-29T12:00:00.000Z"
@@ -123,7 +126,7 @@ Request:
 {
   "title": "Friday movie",
   "maxParticipants": 8,
-  "youtubeUrl": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+  "videoUrl": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 }
 ```
 
@@ -137,7 +140,11 @@ Response `201`:
     "ownerId": "uuid",
     "maxParticipants": 8,
     "activeCount": 1,
-    "youtubeVideoId": "dQw4w9WgXcQ",
+    "videoProvider": "youtube",
+    "videoProviderLabel": "YouTube",
+    "videoId": "dQw4w9WgXcQ",
+    "videoUrl": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "videoEmbedUrl": "https://www.youtube.com/embed/dQw4w9WgXcQ?enablejsapi=1",
     "inviteCode": "code",
     "inviteUrl": "/invite/code",
     "currentUserRole": "owner",
@@ -146,7 +153,9 @@ Response `201`:
 }
 ```
 
-Ошибки: `400 VALIDATION_ERROR`, `400 INVALID_YOUTUBE_URL`, `400 UNSUPPORTED_VIDEO_URL`, `401 INVALID_TOKEN`.
+Для обратной совместимости `youtubeUrl` также принимается как алиас `videoUrl`.
+
+Ошибки: `400 VALIDATION_ERROR`, `400 INVALID_VIDEO_URL`, `400 UNSUPPORTED_VIDEO_URL`, `401 INVALID_TOKEN`.
 
 ### `GET /rooms`
 
@@ -347,7 +356,7 @@ Socket.io клиент подключается к `VITE_SOCKET_URL` с `auth: {
 ### Межсервисные события Redis
 
 - `auth:user_registered`: `{ userId, email, username }`
-- `room:created`: `{ roomId, ownerId, title, youtubeVideoId, inviteCode }`
+- `room:created`: `{ roomId, ownerId, title, videoProvider, videoId, inviteCode }`
 - `room:user_joined`: `{ roomId, user: { id, username }, inviteCode }`
 - `room:user_left`: `{ roomId, user: { id, username } }`
 - `room:deleted`: `{ roomId, title, deletedBy: { id, username } }`
@@ -366,7 +375,7 @@ Socket.io клиент подключается к `VITE_SOCKET_URL` с `auth: {
 cp .env.example .env
 ```
 
-2. Запустить весь MVP:
+2. Запустить OnlyTogether:
 
 ```bash
 docker compose up --build
@@ -377,10 +386,36 @@ docker compose up --build
 - frontend: `http://localhost:5173`
 - API gateway health: `http://localhost:8080/health`
 
+### YouTube И HTTPS Dev-Домен
+
+YouTube iframe может показывать антибот-плашку на `localhost`, в свежих профилях браузера, при VPN/прокси или строгой блокировке third-party cookies. Приложение использует официальный YouTube IFrame API, передает `enablejsapi=1` и указывает `origin`.
+
+Для проверки YouTube лучше поднимать frontend и gateway на HTTPS dev-домене или через туннель. Минимальные переменные:
+
+```env
+FRONTEND_URL=https://your-app.ngrok.app
+VITE_PUBLIC_ORIGIN=https://your-app.ngrok.app
+VITE_API_URL=https://your-api.ngrok.app
+VITE_SOCKET_URL=https://your-api.ngrok.app
+```
+
+`VITE_PUBLIC_ORIGIN` должен совпадать с origin страницы, где открыт iframe. Если переменная не задана, frontend использует `window.location.origin`.
+
+## Логирование И Трассировка
+
+Все backend-сервисы пишут структурные JSON-логи только в stdout/stderr. Обычные события пишутся в stdout с `level: "info"`, ошибки пишутся в stderr с `level: "error"`. В каждой записи есть `time`, `service`, `message` и полезные поля события.
+
+Для каждого входящего HTTP-запроса генерируется или принимается заголовок `X-Request-ID`. Он возвращается клиенту в ответе, добавляется в HTTP-логи и пробрасывается из `api-gateway` во внутренние микросервисы. Это позволяет найти все записи одного запроса:
+
+```bash
+curl -i -H "X-Request-ID: demo-request-1" http://localhost:8080/health
+docker compose logs -f api-gateway auth-service room-service chat-service realtime-service
+```
+
 ## Структура Проекта
 
 ```text
-frontend/                  React + Vite + Socket.io client + YouTube IFrame API
+frontend/                  React + Vite + Socket.io client + video player adapters
 services/api-gateway/      REST gateway + JWT middleware + WS proxy
 services/auth-service/     Auth/JWT/users
 services/room-service/     Rooms/members/video state

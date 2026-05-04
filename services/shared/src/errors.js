@@ -19,15 +19,20 @@ export function notFoundHandler(req, _res, next) {
 }
 
 export function errorHandler(logger) {
-  return (error, _req, res, _next) => {
+  return (error, req, res, _next) => {
     const status = error.status ?? 500;
     const code = error.code ?? 'INTERNAL_ERROR';
+    const requestId = req.requestId ?? req.header?.('x-request-id');
+    const payload = {
+      requestId,
+      method: req.method,
+      path: req.originalUrl ?? req.url,
+      statusCode: status,
+      errorCode: code,
+      error
+    };
 
-    if (status >= 500) {
-      logger.error({ error }, error.message);
-    } else {
-      logger.warn({ error }, error.message);
-    }
+    logger.error(payload, error.message);
 
     res.status(status).json({
       error: {

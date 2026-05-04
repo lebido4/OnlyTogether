@@ -9,4 +9,4 @@ WORKDIR /app/services/realtime-service
 RUN npm install --omit=dev
 
 COPY services/realtime-service ./
-CMD ["npm", "start"]
+CMD ["node", "src/server.js"]

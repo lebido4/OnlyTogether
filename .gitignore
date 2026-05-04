@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Dependencies
 node_modules/
 frontend/node_modules/
@@ -34,3 +35,41 @@ docker-compose.override.yml
 # OS files
 .DS_Store
 Thumbs.db
+=======
+# Dependencies
+node_modules/
+frontend/node_modules/
+
+# Build output
+dist/
+frontend/dist/
+.vite/
+.vite-build/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs and diagnostics
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+coverage/
+
+# Local caches and temp files
+.cache/
+tmp/
+temp/
+
+# Docker and editor local state
+docker-compose.override.yml
+.idea/
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+>>>>>>> develop

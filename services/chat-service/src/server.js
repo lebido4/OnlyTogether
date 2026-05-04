@@ -1,9 +1,11 @@
 import cors from 'cors';
 import express from 'express';
+import http from 'node:http';
 import {
   AppError,
   asyncHandler,
   authMiddleware,
+  createShutdownManager,
   createDbPool,
   createLogger,
   createRedisConnection,
@@ -18,11 +20,26 @@ import {
 } from '@onlytogether/shared';
 
 const app = express();
+const server = http.createServer(app);
 const logger = createLogger('chat-service');
 const db = createDbPool();
 const redis = await createRedisConnection(logger);
+let subscriber;
+const shutdown = createShutdownManager({
+  server,
+  logger,
+  resources: [
+    { name: 'postgres', close: () => db.end() },
+    { name: 'redis', close: () => (redis.isOpen ? redis.quit() : undefined) },
+    {
+      name: 'redis-subscriber',
+      close: () => (subscriber?.isOpen ? subscriber.quit() : undefined)
+    }
+  ]
+});
 
 app.use(requestContext(logger));
+app.use(shutdown.middleware);
 app.use(cors({ origin: process.env.FRONTEND_URL ?? true, credentials: true }));
 app.use(express.json());
 
@@ -140,7 +157,7 @@ app.post(
   })
 );
 
-await subscribeEvents(
+subscriber = await subscribeEvents(
   ['room:user_joined', 'room:user_left'],
   async (event) => {
     const { roomId, user } = event.payload;
@@ -166,4 +183,4 @@ app.use(notFoundHandler);
 app.use(errorHandler(logger));
 
 const port = Number(process.env.CHAT_SERVICE_PORT ?? 3003);
-app.listen(port, () => logger.info({ port }, 'Chat service started'));
+server.listen(port, () => logger.info({ port }, 'Chat service started'));

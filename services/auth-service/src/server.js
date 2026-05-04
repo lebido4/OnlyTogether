@@ -1,10 +1,12 @@
 import bcrypt from 'bcryptjs';
 import cors from 'cors';
 import express from 'express';
+import http from 'node:http';
 import {
   AppError,
   asyncHandler,
   authMiddleware,
+  createShutdownManager,
   createDbPool,
   createLogger,
   createRedisConnection,
@@ -19,11 +21,21 @@ import {
 } from '@onlytogether/shared';
 
 const app = express();
+const server = http.createServer(app);
 const logger = createLogger('auth-service');
 const db = createDbPool();
 const redis = await createRedisConnection(logger);
+const shutdown = createShutdownManager({
+  server,
+  logger,
+  resources: [
+    { name: 'postgres', close: () => db.end() },
+    { name: 'redis', close: () => (redis.isOpen ? redis.quit() : undefined) }
+  ]
+});
 
 app.use(requestContext(logger));
+app.use(shutdown.middleware);
 app.use(cors({ origin: process.env.FRONTEND_URL ?? true, credentials: true }));
 app.use(express.json());
 
@@ -122,4 +134,4 @@ app.use(notFoundHandler);
 app.use(errorHandler(logger));
 
 const port = Number(process.env.AUTH_SERVICE_PORT ?? 3001);
-app.listen(port, () => logger.info({ port }, 'Auth service started'));
+server.listen(port, () => logger.info({ port }, 'Auth service started'));

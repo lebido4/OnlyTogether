@@ -8,6 +8,7 @@ import {
   authMiddleware,
   createLogger,
   createRequestId,
+  createShutdownManager,
   errorHandler,
   requestContext,
   notFoundHandler
@@ -16,6 +17,7 @@ import {
 const app = express();
 const server = http.createServer(app);
 const logger = createLogger('api-gateway');
+const shutdown = createShutdownManager({ server, logger });
 
 const authServiceUrl = process.env.AUTH_SERVICE_URL ?? 'http://auth-service:3001';
 const roomServiceUrl = process.env.ROOM_SERVICE_URL ?? 'http://room-service:3002';
@@ -23,6 +25,7 @@ const chatServiceUrl = process.env.CHAT_SERVICE_URL ?? 'http://chat-service:3003
 const realtimeServiceUrl = process.env.REALTIME_SERVICE_URL ?? 'http://realtime-service:3004';
 
 app.use(requestContext(logger));
+app.use(shutdown.middleware);
 app.use(cors({ origin: process.env.FRONTEND_URL ?? true, credentials: true }));
 
 function buildHeaders(req) {

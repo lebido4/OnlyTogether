@@ -7,6 +7,7 @@ import {
   createLogger,
   createRedisConnection,
   createRequestId,
+  createShutdownManager,
   requestContext,
   subscribeEvents,
   verifyAccessToken
@@ -16,6 +17,7 @@ const app = express();
 const server = http.createServer(app);
 const logger = createLogger('realtime-service');
 const redis = await createRedisConnection(logger);
+let subscriber;
 
 const roomServiceUrl = process.env.ROOM_SERVICE_URL ?? 'http://room-service:3002';
 const chatServiceUrl = process.env.CHAT_SERVICE_URL ?? 'http://chat-service:3003';
@@ -26,17 +28,30 @@ function internalHeaders(requestId) {
   };
 }
 
-app.use(requestContext(logger));
-app.use(cors({ origin: process.env.FRONTEND_URL ?? true, credentials: true }));
-app.get('/health', (_req, res) => {
-  res.json({ service: 'realtime-service', status: 'ok' });
-});
-
 const io = new Server(server, {
   cors: {
     origin: process.env.FRONTEND_URL ?? true,
     credentials: true
   }
+});
+const shutdown = createShutdownManager({
+  server,
+  logger,
+  resources: [
+    { name: 'socket.io', close: () => new Promise((resolve) => io.close(resolve)) },
+    { name: 'redis', close: () => (redis.isOpen ? redis.quit() : undefined) },
+    {
+      name: 'redis-subscriber',
+      close: () => (subscriber?.isOpen ? subscriber.quit() : undefined)
+    }
+  ]
+});
+
+app.use(requestContext(logger));
+app.use(shutdown.middleware);
+app.use(cors({ origin: process.env.FRONTEND_URL ?? true, credentials: true }));
+app.get('/health', (_req, res) => {
+  res.json({ service: 'realtime-service', status: 'ok' });
 });
 
 io.use((socket, next) => {
@@ -241,7 +256,7 @@ io.on('connection', (socket) => {
   });
 });
 
-await subscribeEvents(
+subscriber = await subscribeEvents(
   ['chat:message_sent', 'sync:state_updated', 'room:user_joined', 'room:user_left', 'room:deleted'],
   async (event) => {
     const roomId = event.payload?.roomId;

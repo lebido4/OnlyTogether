@@ -412,6 +412,26 @@ curl -i -H "X-Request-ID: demo-request-1" http://localhost:8080/health
 docker compose logs -f api-gateway auth-service room-service chat-service realtime-service
 ```
 
+## Graceful Shutdown
+
+Backend-сервисы обрабатывают `SIGTERM` и `SIGINT`: сначала переходят в режим отказа от новых запросов с `503 Service Unavailable`, затем ждут завершения уже принятых HTTP-запросов, закрывают HTTP-сокеты, Postgres pool, Redis clients/subscribers и только после этого завершают процесс. Тайм-аут задается через `SHUTDOWN_TIMEOUT_MS`, окно для проверки отказа новых запросов - через `SHUTDOWN_REJECT_WINDOW_MS`.
+
+Проверка локально:
+
+```bash
+docker compose up --build -d
+docker kill --signal=SIGTERM $(docker compose ps -q api-gateway)
+docker compose logs -f api-gateway
+```
+
+В Docker Compose ручной `docker kill` считается ручной остановкой контейнера, поэтому для локальной проверки восстановления можно поднять сервис обратно командой:
+
+```bash
+docker compose up -d api-gateway
+```
+
+В оркестраторе перезапуск выполняется самим runtime. Для локальной среды в `docker-compose.yml` добавлены `restart: unless-stopped` и `stop_grace_period: 15s`.
+
 ## Структура Проекта
 
 ```text

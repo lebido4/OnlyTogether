@@ -71,6 +71,13 @@ jobs:
           echo "API Gateway image: ${API_GATEWAY_IMAGE}"
           echo "Frontend image: ${FRONTEND_IMAGE}"
 
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          
       - name: Deploy without rebuild
         run: |
           docker compose \

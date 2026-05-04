@@ -1,68 +1,51 @@
 name: Deploy Fixed Docker Images
 
 on:
-  push:
+  workflow_run:
+    workflows:
+      - Build Docker Images
+    types:
+      - completed
     branches:
       - develop
       - main
 
 permissions:
   contents: read
-  packages: write  # Добавить write для загрузки образов
+  packages: read
 
 env:
-  REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/watchparty
-  IMAGE_TAG: ${{ github.sha }}
 
 jobs:
-  build-and-deploy:
+  deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    environment: ${{ github.ref_name }}
+
+    environment: ${{ github.event.workflow_run.head_branch }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Select deploy environment
+      - name: Set release tag
         run: |
-          echo "DEPLOY_ENV=${GITHUB_REF_NAME}" >> $GITHUB_ENV
-          echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
-
-      - name: Build and push images
-        run: |
-          docker build -f services/auth-service/Dockerfile -t ghcr.io/${{ github.repository_owner }}/watchparty-auth-service:${GITHUB_SHA::7} .
-          docker build -f services/room-service/Dockerfile -t ghcr.io/${{ github.repository_owner }}/watchparty-room-service:${GITHUB_SHA::7} .
-          docker build -f services/chat-service/Dockerfile -t ghcr.io/${{ github.repository_owner }}/watchparty-chat-service:${GITHUB_SHA::7} .
-          docker build -f services/realtime-service/Dockerfile -t ghcr.io/${{ github.repository_owner }}/watchparty-realtime-service:${GITHUB_SHA::7} .
-          docker build -f services/api-gateway/Dockerfile -t ghcr.io/${{ github.repository_owner }}/watchparty-api-gateway:${GITHUB_SHA::7} .
-          docker build -f frontend/Dockerfile -t ghcr.io/${{ github.repository_owner }}/watchparty-frontend:${GITHUB_SHA::7} .
-          
-          docker push ghcr.io/${{ github.repository_owner }}/watchparty-auth-service:${GITHUB_SHA::7}
-          docker push ghcr.io/${{ github.repository_owner }}/watchparty-room-service:${GITHUB_SHA::7}
-          docker push ghcr.io/${{ github.repository_owner }}/watchparty-chat-service:${GITHUB_SHA::7}
-          docker push ghcr.io/${{ github.repository_owner }}/watchparty-realtime-service:${GITHUB_SHA::7}
-          docker push ghcr.io/${{ github.repository_owner }}/watchparty-api-gateway:${GITHUB_SHA::7}
-          docker push ghcr.io/${{ github.repository_owner }}/watchparty-frontend:${GITHUB_SHA::7}
+          echo "DEPLOY_ENV=${{ github.event.workflow_run.head_branch }}" >> $GITHUB_ENV
+          echo "SHORT_SHA=$(echo ${{ github.event.workflow_run.head_sha }} | cut -c1-7)" >> $GITHUB_ENV
 
       - name: Prepare release image tags
         run: |
-          echo "AUTH_SERVICE_IMAGE=ghcr.io/${{ github.repository_owner }}/watchparty-auth-service:${GITHUB_SHA::7}" >> $GITHUB_ENV
-          echo "ROOM_SERVICE_IMAGE=ghcr.io/${{ github.repository_owner }}/watchparty-room-service:${GITHUB_SHA::7}" >> $GITHUB_ENV
-          echo "CHAT_SERVICE_IMAGE=ghcr.io/${{ github.repository_owner }}/watchparty-chat-service:${GITHUB_SHA::7}" >> $GITHUB_ENV
-          echo "REALTIME_SERVICE_IMAGE=ghcr.io/${{ github.repository_owner }}/watchparty-realtime-service:${GITHUB_SHA::7}" >> $GITHUB_ENV
-          echo "API_GATEWAY_IMAGE=ghcr.io/${{ github.repository_owner }}/watchparty-api-gateway:${GITHUB_SHA::7}" >> $GITHUB_ENV
-          echo "FRONTEND_IMAGE=ghcr.io/${{ github.repository_owner }}/watchparty-frontend:${GITHUB_SHA::7}" >> $GITHUB_ENV
+          echo "AUTH_SERVICE_IMAGE=${IMAGE_PREFIX}-auth-service:${SHORT_SHA}" >> $GITHUB_ENV
+          echo "ROOM_SERVICE_IMAGE=${IMAGE_PREFIX}-room-service:${SHORT_SHA}" >> $GITHUB_ENV
+          echo "CHAT_SERVICE_IMAGE=${IMAGE_PREFIX}-chat-service:${SHORT_SHA}" >> $GITHUB_ENV
+          echo "REALTIME_SERVICE_IMAGE=${IMAGE_PREFIX}-realtime-service:${SHORT_SHA}" >> $GITHUB_ENV
+          echo "API_GATEWAY_IMAGE=${IMAGE_PREFIX}-api-gateway:${SHORT_SHA}" >> $GITHUB_ENV
+          echo "FRONTEND_IMAGE=${IMAGE_PREFIX}-frontend:${SHORT_SHA}" >> $GITHUB_ENV
 
       - name: Apply environment config
         run: |
@@ -75,7 +58,7 @@ jobs:
           VITE_PUBLIC_ORIGIN=${{ vars.VITE_PUBLIC_ORIGIN }}
           VITE_API_URL=${{ vars.VITE_API_URL }}
           VITE_SOCKET_URL=${{ vars.VITE_SOCKET_URL }}
-          
+
           AUTH_SERVICE_IMAGE=${AUTH_SERVICE_IMAGE}
           ROOM_SERVICE_IMAGE=${ROOM_SERVICE_IMAGE}
           CHAT_SERVICE_IMAGE=${CHAT_SERVICE_IMAGE}
@@ -84,14 +67,14 @@ jobs:
           FRONTEND_IMAGE=${FRONTEND_IMAGE}
           EOF
 
-      - name: Deploy with pulled images
+      - name: Log release identity
         run: |
-          docker compose \
-            --env-file .env.deploy \
-            -f docker-compose.deploy.yml \
-            pull
-          
-          docker compose \
-            --env-file .env.deploy \
-            -f docker-compose.deploy.yml \
-            up -d --no-build
+          echo "Release environment: ${DEPLOY_ENV}"
+          echo "Release image tag: ${SHORT_SHA}"
+          echo "Auth image: ${AUTH_SERVICE_IMAGE}"
+          echo "Chat image: ${CHAT_SERVICE_IMAGE}"
+
+      - name: Deploy without rebuild
+        run: |
+          docker compose --env-file .env.deploy -f docker-compose.deploy.yml pull
+          docker compose --env-file .env.deploy -f docker-compose.deploy.yml up -d --no-build

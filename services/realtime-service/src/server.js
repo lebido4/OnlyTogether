@@ -6,6 +6,8 @@ import { Server } from 'socket.io';
 import {
   createLogger,
   createRedisConnection,
+  createRequestId,
+  requestContext,
   subscribeEvents,
   verifyAccessToken
 } from '@onlytogether/shared';
@@ -17,8 +19,14 @@ const redis = await createRedisConnection(logger);
 
 const roomServiceUrl = process.env.ROOM_SERVICE_URL ?? 'http://room-service:3002';
 const chatServiceUrl = process.env.CHAT_SERVICE_URL ?? 'http://chat-service:3003';
-const internalHeaders = { 'x-internal-api-key': process.env.INTERNAL_API_KEY };
+function internalHeaders(requestId) {
+  return {
+    'x-internal-api-key': process.env.INTERNAL_API_KEY,
+    'x-request-id': requestId
+  };
+}
 
+app.use(requestContext(logger));
 app.use(cors({ origin: process.env.FRONTEND_URL ?? true, credentials: true }));
 app.get('/health', (_req, res) => {
   res.json({ service: 'realtime-service', status: 'ok' });
@@ -88,13 +96,17 @@ async function broadcastPresence(roomId) {
   });
 }
 
-async function verifyRoomAccess(socket, roomId) {
+async function verifyRoomAccess(socket, roomId, requestId) {
   await axios.get(`${roomServiceUrl}/rooms/${roomId}`, {
-    headers: { authorization: `Bearer ${socket.data.token}` }
+    headers: {
+      authorization: `Bearer ${socket.data.token}`,
+      'x-request-id': requestId
+    }
   });
 }
 
 async function emitSyncCommand(socket, action, payload, ack) {
+  const requestId = createRequestId();
   try {
     const roomId = String(payload?.roomId ?? '');
     const positionSec = Number(payload?.positionSec ?? 0);
@@ -111,12 +123,20 @@ async function emitSyncCommand(socket, action, payload, ack) {
         action,
         positionSec
       },
-      { headers: internalHeaders }
+      { headers: internalHeaders(requestId) }
     );
 
+    logger.info(
+      { requestId, socketId: socket.id, userId: socket.data.user.id, roomId, action },
+      'Socket sync command handled'
+    );
     ack?.({ ok: true, payload: response.data });
   } catch (error) {
     const message = error.response?.data?.error?.message ?? error.message;
+    logger.error(
+      { requestId, socketId: socket.id, userId: socket.data.user.id, action, error },
+      'Socket sync command failed'
+    );
     ack?.({ ok: false, error: message });
     socket.emit('sync:error', { message });
   }
@@ -126,39 +146,54 @@ io.on('connection', (socket) => {
   logger.info({ socketId: socket.id, userId: socket.data.user.id }, 'Socket connected');
 
   socket.on('room:join', async (payload, ack) => {
+    const requestId = createRequestId();
     try {
       const roomId = String(payload?.roomId ?? '');
       if (!roomId) {
         throw new Error('roomId is required');
       }
 
-      await verifyRoomAccess(socket, roomId);
+      await verifyRoomAccess(socket, roomId, requestId);
       socket.join(roomChannel(roomId));
       socket.data.rooms.add(roomId);
 
       await addPresence(roomId, socket.data.user.id, socket.id);
       await broadcastPresence(roomId);
 
+      logger.info(
+        { requestId, socketId: socket.id, userId: socket.data.user.id, roomId },
+        'Socket joined room'
+      );
       ack?.({ ok: true });
     } catch (error) {
       const message = error.response?.data?.error?.message ?? error.message;
+      logger.error(
+        { requestId, socketId: socket.id, userId: socket.data.user.id, error },
+        'Socket failed to join room'
+      );
       ack?.({ ok: false, error: message });
       socket.emit('room:error', { message });
     }
   });
 
   socket.on('room:leave', async (payload, ack) => {
+    const requestId = createRequestId();
     const roomId = String(payload?.roomId ?? '');
     if (roomId) {
       socket.leave(roomChannel(roomId));
       socket.data.rooms.delete(roomId);
       await removePresence(roomId, socket.data.user.id, socket.id);
       await broadcastPresence(roomId);
+      logger.info(
+        { requestId, socketId: socket.id, userId: socket.data.user.id, roomId },
+        'Socket left room'
+      );
     }
     ack?.({ ok: true });
   });
 
   socket.on('chat:send_message', async (payload, ack) => {
+    const requestId = createRequestId();
     try {
       const roomId = String(payload?.roomId ?? '');
       const content = String(payload?.content ?? '').trim();
@@ -173,12 +208,20 @@ io.on('connection', (socket) => {
           userId: socket.data.user.id,
           content
         },
-        { headers: internalHeaders }
+        { headers: internalHeaders(requestId) }
       );
 
+      logger.info(
+        { requestId, socketId: socket.id, userId: socket.data.user.id, roomId },
+        'Socket chat message handled'
+      );
       ack?.({ ok: true, payload: response.data });
     } catch (error) {
       const message = error.response?.data?.error?.message ?? error.message;
+      logger.error(
+        { requestId, socketId: socket.id, userId: socket.data.user.id, error },
+        'Socket chat message failed'
+      );
       ack?.({ ok: false, error: message });
       socket.emit('chat:error', { message });
     }

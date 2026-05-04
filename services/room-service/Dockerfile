@@ -9,4 +9,4 @@ WORKDIR /app/services/room-service
 RUN npm install --omit=dev
 
 COPY services/room-service ./
-CMD ["npm", "start"]
+CMD ["node", "src/server.js"]

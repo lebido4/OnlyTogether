@@ -13,6 +13,7 @@ import {
   parseVideoSource,
   publishEvent,
   queryOne,
+  requestContext,
   requireInteger,
   requireInternalApiKey,
   requireString,
@@ -24,6 +25,7 @@ const logger = createLogger('room-service');
 const db = createDbPool();
 const redis = await createRedisConnection(logger);
 
+app.use(requestContext(logger));
 app.use(cors({ origin: process.env.FRONTEND_URL ?? true, credentials: true }));
 app.use(express.json());
 

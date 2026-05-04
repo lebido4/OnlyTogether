@@ -9,4 +9,4 @@ WORKDIR /app/services/chat-service
 RUN npm install --omit=dev
 
 COPY services/chat-service ./
-CMD ["npm", "start"]
+CMD ["node", "src/server.js"]

@@ -7,7 +7,9 @@ import {
   asyncHandler,
   authMiddleware,
   createLogger,
+  createRequestId,
   errorHandler,
+  requestContext,
   notFoundHandler
 } from '@onlytogether/shared';
 
@@ -20,12 +22,14 @@ const roomServiceUrl = process.env.ROOM_SERVICE_URL ?? 'http://room-service:3002
 const chatServiceUrl = process.env.CHAT_SERVICE_URL ?? 'http://chat-service:3003';
 const realtimeServiceUrl = process.env.REALTIME_SERVICE_URL ?? 'http://realtime-service:3004';
 
+app.use(requestContext(logger));
 app.use(cors({ origin: process.env.FRONTEND_URL ?? true, credentials: true }));
 
 function buildHeaders(req) {
   const headers = {
     authorization: req.header('authorization') ?? '',
-    'content-type': req.header('content-type') ?? 'application/json'
+    'content-type': req.header('content-type') ?? 'application/json',
+    'x-request-id': req.requestId
   };
 
   if (req.user) {
@@ -55,7 +59,13 @@ const socketProxy = createProxyMiddleware('/socket.io', {
   target: realtimeServiceUrl,
   changeOrigin: true,
   ws: true,
-  logLevel: 'warn'
+  logLevel: 'silent',
+  onProxyReq(proxyReq, req) {
+    proxyReq.setHeader('x-request-id', req.requestId ?? createRequestId());
+  },
+  onProxyReqWs(proxyReq, req) {
+    proxyReq.setHeader('x-request-id', req.requestId ?? createRequestId());
+  }
 });
 
 app.use(socketProxy);

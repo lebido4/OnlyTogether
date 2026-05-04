@@ -11,6 +11,7 @@ import {
   notFoundHandler,
   publishEvent,
   queryOne,
+  requestContext,
   requireInternalApiKey,
   requireString,
   subscribeEvents
@@ -21,6 +22,7 @@ const logger = createLogger('chat-service');
 const db = createDbPool();
 const redis = await createRedisConnection(logger);
 
+app.use(requestContext(logger));
 app.use(cors({ origin: process.env.FRONTEND_URL ?? true, credentials: true }));
 app.use(express.json());
 

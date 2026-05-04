@@ -9,4 +9,4 @@ WORKDIR /app/services/api-gateway
 RUN npm install --omit=dev
 
 COPY services/api-gateway ./
-CMD ["npm", "start"]
+CMD ["node", "src/server.js"]

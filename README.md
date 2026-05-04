@@ -401,6 +401,17 @@ VITE_SOCKET_URL=https://your-api.ngrok.app
 
 `VITE_PUBLIC_ORIGIN` должен совпадать с origin страницы, где открыт iframe. Если переменная не задана, frontend использует `window.location.origin`.
 
+## Логирование И Трассировка
+
+Все backend-сервисы пишут структурные JSON-логи только в stdout/stderr. Обычные события пишутся в stdout с `level: "info"`, ошибки пишутся в stderr с `level: "error"`. В каждой записи есть `time`, `service`, `message` и полезные поля события.
+
+Для каждого входящего HTTP-запроса генерируется или принимается заголовок `X-Request-ID`. Он возвращается клиенту в ответе, добавляется в HTTP-логи и пробрасывается из `api-gateway` во внутренние микросервисы. Это позволяет найти все записи одного запроса:
+
+```bash
+curl -i -H "X-Request-ID: demo-request-1" http://localhost:8080/health
+docker compose logs -f api-gateway auth-service room-service chat-service realtime-service
+```
+
 ## Структура Проекта
 
 ```text

@@ -12,6 +12,7 @@ import {
   notFoundHandler,
   publishEvent,
   queryOne,
+  requestContext,
   requireString,
   signAccessToken,
   validateEmail
@@ -22,6 +23,7 @@ const logger = createLogger('auth-service');
 const db = createDbPool();
 const redis = await createRedisConnection(logger);
 
+app.use(requestContext(logger));
 app.use(cors({ origin: process.env.FRONTEND_URL ?? true, credentials: true }));
 app.use(express.json());
 
@@ -80,7 +82,7 @@ app.post(
   asyncHandler(async (req, res) => {
     const email = validateEmail(requireString(req.body, 'email', { min: 5, max: 255 }));
     const password = requireString(req.body, 'password', { min: 1, max: 128 });
-    console.log(`Instance: ${process.pid}`);
+    logger.info({ requestId: req.requestId, pid: process.pid }, 'Login attempt received');
     const user = await queryOne(
       db,
       'SELECT id, email, username, password_hash, created_at FROM users WHERE email = $1',

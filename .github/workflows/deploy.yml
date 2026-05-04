@@ -1,0 +1,84 @@
+name: Deploy Fixed Docker Images
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/watchparty
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    environment: ${{ github.ref_name }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select deploy environment
+        run: |
+          echo "DEPLOY_ENV=${GITHUB_REF_NAME}" >> $GITHUB_ENV
+          echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+      - name: Prepare release image tags
+        run: |
+          echo "AUTH_SERVICE_IMAGE=${IMAGE_PREFIX}-auth-service:${GITHUB_SHA::7}" >> $GITHUB_ENV
+          echo "ROOM_SERVICE_IMAGE=${IMAGE_PREFIX}-room-service:${GITHUB_SHA::7}" >> $GITHUB_ENV
+          echo "CHAT_SERVICE_IMAGE=${IMAGE_PREFIX}-chat-service:${GITHUB_SHA::7}" >> $GITHUB_ENV
+          echo "REALTIME_SERVICE_IMAGE=${IMAGE_PREFIX}-realtime-service:${GITHUB_SHA::7}" >> $GITHUB_ENV
+          echo "API_GATEWAY_IMAGE=${IMAGE_PREFIX}-api-gateway:${GITHUB_SHA::7}" >> $GITHUB_ENV
+          echo "FRONTEND_IMAGE=${IMAGE_PREFIX}-frontend:${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+      - name: Apply environment config
+        run: |
+          cat > .env.deploy <<EOF
+          DATABASE_URL=${{ secrets.DATABASE_URL }}
+          REDIS_URL=${{ secrets.REDIS_URL }}
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          INTERNAL_API_KEY=${{ secrets.INTERNAL_API_KEY }}
+          FRONTEND_URL=${{ vars.FRONTEND_URL }}
+          VITE_PUBLIC_ORIGIN=${{ vars.VITE_PUBLIC_ORIGIN }}
+          VITE_API_URL=${{ vars.VITE_API_URL }}
+          VITE_SOCKET_URL=${{ vars.VITE_SOCKET_URL }}
+
+          AUTH_SERVICE_IMAGE=${AUTH_SERVICE_IMAGE}
+          ROOM_SERVICE_IMAGE=${ROOM_SERVICE_IMAGE}
+          CHAT_SERVICE_IMAGE=${CHAT_SERVICE_IMAGE}
+          REALTIME_SERVICE_IMAGE=${REALTIME_SERVICE_IMAGE}
+          API_GATEWAY_IMAGE=${API_GATEWAY_IMAGE}
+          FRONTEND_IMAGE=${FRONTEND_IMAGE}
+          EOF
+
+      - name: Log release identity
+        run: |
+          echo "Release environment: ${DEPLOY_ENV}"
+          echo "Release commit: ${GITHUB_SHA}"
+          echo "Release image tag: ${SHORT_SHA}"
+          echo "Auth image: ${AUTH_SERVICE_IMAGE}"
+          echo "Room image: ${ROOM_SERVICE_IMAGE}"
+          echo "Chat image: ${CHAT_SERVICE_IMAGE}"
+          echo "Realtime image: ${REALTIME_SERVICE_IMAGE}"
+          echo "API Gateway image: ${API_GATEWAY_IMAGE}"
+          echo "Frontend image: ${FRONTEND_IMAGE}"
+
+      - name: Deploy without rebuild
+        run: |
+          docker compose \
+            --env-file .env.deploy \
+            -f docker-compose.deploy.yml \
+            pull
+
+          docker compose \
+            --env-file .env.deploy \
+            -f docker-compose.deploy.yml \
+            up -d --no-build

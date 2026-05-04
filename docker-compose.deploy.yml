@@ -1,0 +1,63 @@
+services:
+  auth-service:
+    image: ${AUTH_SERVICE_IMAGE}
+    environment:
+      AUTH_SERVICE_PORT: 3001
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+      FRONTEND_URL: ${FRONTEND_URL}
+
+  room-service:
+    image: ${ROOM_SERVICE_IMAGE}
+    environment:
+      ROOM_SERVICE_PORT: 3002
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+      FRONTEND_URL: ${FRONTEND_URL}
+
+  chat-service:
+    image: ${CHAT_SERVICE_IMAGE}
+    environment:
+      CHAT_SERVICE_PORT: 3003
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+      FRONTEND_URL: ${FRONTEND_URL}
+
+  realtime-service:
+    image: ${REALTIME_SERVICE_IMAGE}
+    environment:
+      REALTIME_SERVICE_PORT: 3004
+      REDIS_URL: ${REDIS_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+      ROOM_SERVICE_URL: http://room-service:3002
+      CHAT_SERVICE_URL: http://chat-service:3003
+      FRONTEND_URL: ${FRONTEND_URL}
+
+  api-gateway:
+    image: ${API_GATEWAY_IMAGE}
+    environment:
+      API_GATEWAY_PORT: 8080
+      JWT_SECRET: ${JWT_SECRET}
+      AUTH_SERVICE_URL: http://auth-service:3001
+      ROOM_SERVICE_URL: http://room-service:3002
+      CHAT_SERVICE_URL: http://chat-service:3003
+      REALTIME_SERVICE_URL: http://realtime-service:3004
+      FRONTEND_URL: ${FRONTEND_URL}
+    ports:
+      - "8080:8080"
+
+  frontend:
+    image: ${FRONTEND_IMAGE}
+    environment:
+      VITE_PUBLIC_ORIGIN: ${VITE_PUBLIC_ORIGIN}
+      VITE_API_URL: ${VITE_API_URL}
+      VITE_SOCKET_URL: ${VITE_SOCKET_URL}
+    ports:
+      - "5173:5173"

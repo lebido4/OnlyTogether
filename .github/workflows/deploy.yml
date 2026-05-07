@@ -15,7 +15,7 @@ permissions:
   packages: read
 
 env:
-  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/watchparty
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/onlytogether
 
 jobs:
   deploy:

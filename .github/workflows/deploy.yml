@@ -77,25 +77,25 @@ jobs:
           echo "Auth image: ${AUTH_SERVICE_IMAGE}"
           echo "Chat image: ${CHAT_SERVICE_IMAGE}"
 
-    - name: Run database migrations
-      run: |
-        docker compose --env-file .env.deploy -f docker-compose.deploy.yml pull auth-service
-        if grep -Eq '^DATABASE_URL=.*@postgres([:/]|$)' .env.deploy; then
-          docker compose --env-file .env.deploy -f docker-compose.deploy.yml pull postgres
-          docker compose --env-file .env.deploy -f docker-compose.deploy.yml up -d postgres
-          
-          # Ожидание готовности PostgreSQL
-          echo "Waiting for PostgreSQL to be ready..."
-          for i in {1..30}; do
-            if docker compose --env-file .env.deploy -f docker-compose.deploy.yml exec -T postgres pg_isready -U ${POSTGRES_USER:-watchparty} > /dev/null 2>&1; then
-              echo "PostgreSQL is ready!"
-              break
-            fi
-            echo "Attempt $i/30: PostgreSQL not ready yet, waiting..."
-            sleep 2
-          done
-        fi
-        docker compose --env-file .env.deploy -f docker-compose.deploy.yml run --rm --no-deps auth-service migrate
+      - name: Run database migrations
+        run: |
+          docker compose --env-file .env.deploy -f docker-compose.deploy.yml pull auth-service
+          if grep -Eq '^DATABASE_URL=.*@postgres([:/]|$)' .env.deploy; then
+            docker compose --env-file .env.deploy -f docker-compose.deploy.yml pull postgres
+            docker compose --env-file .env.deploy -f docker-compose.deploy.yml up -d postgres
+            
+            # Ожидание готовности PostgreSQL
+            echo "Waiting for PostgreSQL to be ready..."
+            for i in {1..30}; do
+              if docker compose --env-file .env.deploy -f docker-compose.deploy.yml exec -T postgres pg_isready -U ${POSTGRES_USER:-watchparty} > /dev/null 2>&1; then
+                echo "PostgreSQL is ready!"
+                break
+              fi
+              echo "Attempt $i/30: PostgreSQL not ready yet, waiting..."
+              sleep 2
+            done
+          fi
+          docker compose --env-file .env.deploy -f docker-compose.deploy.yml run --rm --no-deps auth-service migrate
 
       - name: Deploy without rebuild
         run: |

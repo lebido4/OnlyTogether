@@ -465,7 +465,7 @@ docker run --rm \
   create-admin --email=admin@example.com --username=admin
 ```
 
-В CI/CD перед деплоем новой версии добавлен шаг `Run database migrations` в `.github/workflows/deploy.yml`. Он запускает одноразовый контейнер из того же `auth-service` образа с командой `migrate`; если команда завершится с ошибкой, workflow остановится и деплой не продолжится.
+В CI/CD перед деплоем новой версии добавлен шаг `Run database migrations` в `.github/workflows/deploy.yml`. Он запускает одноразовый контейнер `auth-service` через `docker compose run --rm --no-deps auth-service migrate` в Docker-сети deploy-стека. Если `DATABASE_URL` указывает на hostname `postgres`, workflow заранее поднимает compose-сервис `postgres`, поэтому DNS-имя резолвится корректно; если миграция завершится с ошибкой, workflow остановится и деплой не продолжится.
 
 ## Структура Проекта
 

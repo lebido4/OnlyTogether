@@ -1,49 +1,115 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-watchparty}
+      POSTGRES_USER: ${POSTGRES_USER:-watchparty}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-watchparty}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   auth-service:
     image: ${AUTH_SERVICE_IMAGE}
+    restart: unless-stopped
+    stop_grace_period: 15s
     environment:
       AUTH_SERVICE_PORT: 3001
+      SHUTDOWN_TIMEOUT_MS: 10000
+      SHUTDOWN_REJECT_WINDOW_MS: 1500
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
       JWT_SECRET: ${JWT_SECRET}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY}
       FRONTEND_URL: ${FRONTEND_URL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   room-service:
     image: ${ROOM_SERVICE_IMAGE}
+    restart: unless-stopped
+    stop_grace_period: 15s
     environment:
       ROOM_SERVICE_PORT: 3002
+      SHUTDOWN_TIMEOUT_MS: 10000
+      SHUTDOWN_REJECT_WINDOW_MS: 1500
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
       JWT_SECRET: ${JWT_SECRET}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY}
       FRONTEND_URL: ${FRONTEND_URL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   chat-service:
     image: ${CHAT_SERVICE_IMAGE}
+    restart: unless-stopped
+    stop_grace_period: 15s
     environment:
       CHAT_SERVICE_PORT: 3003
+      SHUTDOWN_TIMEOUT_MS: 10000
+      SHUTDOWN_REJECT_WINDOW_MS: 1500
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
       JWT_SECRET: ${JWT_SECRET}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY}
       FRONTEND_URL: ${FRONTEND_URL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   realtime-service:
     image: ${REALTIME_SERVICE_IMAGE}
+    restart: unless-stopped
+    stop_grace_period: 15s
     environment:
       REALTIME_SERVICE_PORT: 3004
+      SHUTDOWN_TIMEOUT_MS: 10000
+      SHUTDOWN_REJECT_WINDOW_MS: 1500
       REDIS_URL: ${REDIS_URL}
       JWT_SECRET: ${JWT_SECRET}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY}
       ROOM_SERVICE_URL: http://room-service:3002
       CHAT_SERVICE_URL: http://chat-service:3003
       FRONTEND_URL: ${FRONTEND_URL}
+    depends_on:
+      redis:
+        condition: service_healthy
+      room-service:
+        condition: service_started
+      chat-service:
+        condition: service_started
 
   api-gateway:
     image: ${API_GATEWAY_IMAGE}
+    restart: unless-stopped
+    stop_grace_period: 15s
     environment:
       API_GATEWAY_PORT: 8080
+      SHUTDOWN_TIMEOUT_MS: 10000
+      SHUTDOWN_REJECT_WINDOW_MS: 1500
       JWT_SECRET: ${JWT_SECRET}
       AUTH_SERVICE_URL: http://auth-service:3001
       ROOM_SERVICE_URL: http://room-service:3002
@@ -52,12 +118,23 @@ services:
       FRONTEND_URL: ${FRONTEND_URL}
     ports:
       - "8080:8080"
+    depends_on:
+      - auth-service
+      - room-service
+      - chat-service
+      - realtime-service
 
   frontend:
     image: ${FRONTEND_IMAGE}
+    restart: unless-stopped
     environment:
       VITE_PUBLIC_ORIGIN: ${VITE_PUBLIC_ORIGIN}
       VITE_API_URL: ${VITE_API_URL}
       VITE_SOCKET_URL: ${VITE_SOCKET_URL}
     ports:
       - "5173:5173"
+    depends_on:
+      - api-gateway
+
+volumes:
+  postgres_data:

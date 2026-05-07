@@ -432,6 +432,41 @@ docker compose up -d api-gateway
 
 В оркестраторе перезапуск выполняется самим runtime. Для локальной среды в `docker-compose.yml` добавлены `restart: unless-stopped` и `stop_grace_period: 15s`.
 
+## Административные Команды И Миграции
+
+Образ `auth-service` может запускаться в нескольких режимах через CLI:
+
+```bash
+server
+migrate
+create-admin --email=admin@example.com --username=admin --password=change-me
+clear-cache --pattern=presence:*
+clear-cache --all
+```
+
+Миграции лежат в `database/migrations` и применяются отдельным одноразовым процессом. Приложение не меняет схему БД при старте основного сервера.
+
+Локально:
+
+```bash
+docker compose run --rm auth-service migrate
+docker compose run --rm auth-service create-admin --email=admin@example.com --username=admin --password=change-me
+docker compose run --rm auth-service clear-cache --pattern=presence:*
+```
+
+Через обычный Docker без входа внутрь контейнера:
+
+```bash
+docker run --rm \
+  --network kur_per_codex_default \
+  -e DATABASE_URL=postgres://watchparty:watchparty@postgres:5432/watchparty \
+  -e ADMIN_PASSWORD=change-me \
+  kur_per_codex-auth-service \
+  create-admin --email=admin@example.com --username=admin
+```
+
+В CI/CD перед деплоем новой версии добавлен шаг `Run database migrations` в `.github/workflows/deploy.yml`. Он запускает одноразовый контейнер из того же `auth-service` образа с командой `migrate`; если команда завершится с ошибкой, workflow остановится и деплой не продолжится.
+
 ## Структура Проекта
 
 ```text

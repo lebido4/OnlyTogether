@@ -5,6 +5,7 @@ export function signAccessToken(user) {
   return jwt.sign(
     {
       email: user.email,
+      isAdmin: Boolean(user.isAdmin ?? user.is_admin),
       username: user.username
     },
     process.env.JWT_SECRET,
@@ -20,6 +21,7 @@ export function verifyAccessToken(token) {
   return {
     id: decoded.sub,
     email: decoded.email,
+    isAdmin: Boolean(decoded.isAdmin),
     username: decoded.username
   };
 }

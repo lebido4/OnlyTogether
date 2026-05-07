@@ -44,6 +44,7 @@ function mapUser(row) {
     id: row.id,
     email: row.email,
     username: row.username,
+    isAdmin: Boolean(row.is_admin),
     createdAt: row.created_at
   };
 }
@@ -66,7 +67,7 @@ app.post(
         db,
         `INSERT INTO users (email, username, password_hash)
          VALUES ($1, $2, $3)
-         RETURNING id, email, username, created_at`,
+         RETURNING id, email, username, is_admin, created_at`,
         [email, username, passwordHash]
       );
     } catch (error) {
@@ -97,7 +98,7 @@ app.post(
     logger.info({ requestId: req.requestId, pid: process.pid }, 'Login attempt received');
     const user = await queryOne(
       db,
-      'SELECT id, email, username, password_hash, created_at FROM users WHERE email = $1',
+      'SELECT id, email, username, password_hash, is_admin, created_at FROM users WHERE email = $1',
       [email]
     );
 
@@ -118,7 +119,7 @@ app.get(
   asyncHandler(async (req, res) => {
     const user = await queryOne(
       db,
-      'SELECT id, email, username, created_at FROM users WHERE id = $1',
+      'SELECT id, email, username, is_admin, created_at FROM users WHERE id = $1',
       [req.user.id]
     );
 

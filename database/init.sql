@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT NOT NULL UNIQUE,
   username TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
+  is_admin BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -68,6 +69,7 @@ CREATE INDEX IF NOT EXISTS idx_room_members_room_active ON room_members(room_id,
 CREATE INDEX IF NOT EXISTS idx_room_members_user_active ON room_members(user_id, is_active);
 CREATE INDEX IF NOT EXISTS idx_messages_room_created ON messages(room_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_room_events_room_created ON room_events(room_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_users_is_admin ON users(is_admin);
 
 DROP TRIGGER IF EXISTS users_set_updated_at ON users;
 CREATE TRIGGER users_set_updated_at

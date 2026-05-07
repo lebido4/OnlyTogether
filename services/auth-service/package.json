@@ -4,8 +4,11 @@
   "type": "module",
   "main": "src/server.js",
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "node --watch src/server.js"
+    "start": "node src/cli.js server",
+    "dev": "node --watch src/cli.js server",
+    "migrate": "node src/cli.js migrate",
+    "create-admin": "node src/cli.js create-admin",
+    "clear-cache": "node src/cli.js clear-cache"
   },
   "dependencies": {
     "@onlytogether/shared": "file:../shared",

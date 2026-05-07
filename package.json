@@ -10,6 +10,9 @@
   "scripts": {
     "docker:up": "docker compose up --build",
     "docker:down": "docker compose down -v",
+    "migrate": "npm --workspace @onlytogether/auth-service run migrate",
+    "create-admin": "npm --workspace @onlytogether/auth-service run create-admin",
+    "clear-cache": "npm --workspace @onlytogether/auth-service run clear-cache",
     "dev:gateway": "npm --workspace @onlytogether/api-gateway run dev",
     "dev:auth": "npm --workspace @onlytogether/auth-service run dev",
     "dev:room": "npm --workspace @onlytogether/room-service run dev",
